@@ -178,13 +178,13 @@ describe('SeedRunner', () => {
     expect(journalRows).toHaveLength(0)
   })
 
-  it('runs production seeders in fresh-user order without duplicating the default assistant', async () => {
+  it('runs production seeders without seeding any default assistant or conversation', async () => {
     const runner = new SeedRunner(dbh.db)
 
     runner.runAll(seeders)
     runner.runAll(seeders)
 
     const assistants = await dbh.db.select().from(assistantTable)
-    expect(assistants).toHaveLength(1)
+    expect(assistants).toHaveLength(0)
   })
 })

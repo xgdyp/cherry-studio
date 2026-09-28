@@ -796,7 +796,7 @@
     {
       "targetKey": "feature.mini_app.check_updates_on_open",
       "type": "boolean",
-      "defaultValue": true,
+      "defaultValue": false,
       "status": "classified",
       "description": "Check installed mini apps for updates when they are opened (v2 new feature, no v1 source)"
     },

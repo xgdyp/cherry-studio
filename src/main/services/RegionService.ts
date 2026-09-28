@@ -2,6 +2,7 @@ import { net } from 'electron'
 
 import { application } from '@application'
 import { loggerService } from '@logger'
+import { WH_ENTERPRISE } from '@shared/utils/enterpriseFlags'
 
 const logger = loggerService.withContext('RegionService')
 
@@ -52,6 +53,9 @@ class RegionService {
   }
 
   private async getDetectedCountry(): Promise<string> {
+    // WH enterprise: no external IP lookup on the intranet — assume CN so
+    // mirror routing keeps preferring domestic endpoints.
+    if (WH_ENTERPRISE) return DEFAULT_COUNTRY
     const proxyKey = application.get('ProxyService').appliedProxyKey
     const cached = application.get('CacheService').get<CachedEgressRegion>(CACHE_KEY)
     if (cached && cached.proxyKey === proxyKey) {

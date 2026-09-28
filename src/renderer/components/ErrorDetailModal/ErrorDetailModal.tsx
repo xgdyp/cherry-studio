@@ -38,6 +38,7 @@ import {
 import { formatAiSdkError, formatError, safeToString } from '@renderer/utils/error'
 import type { DiagnosisContext, DiagnosisResult } from '@renderer/utils/errorDiagnosis'
 import { parseDataUrl } from '@shared/utils/dataUrl'
+import { WH_FEEDBACK_DISABLED } from '@shared/utils/enterpriseFlags'
 
 import Scrollbar from '../Scrollbar'
 import AiDiagnosisSectionWithStatus from './AiDiagnosisSection'
@@ -647,7 +648,7 @@ const ErrorDetailContent: React.FC<ErrorDetailContentProps> = ({
           <Copy size={14} />
           {t('common.copy')}
         </Button>
-        {diagnosticReport && onOpenDiagnosticReport ? (
+        {!WH_FEEDBACK_DISABLED && diagnosticReport && onOpenDiagnosticReport ? (
           <Button variant="outline" onClick={openDiagnosticReport}>
             <FileUp size={14} />
             {t('error.diagnostic_report.action')}

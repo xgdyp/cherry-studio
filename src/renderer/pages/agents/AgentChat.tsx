@@ -44,6 +44,7 @@ import { BUILTIN_AGENT_ROLE } from '@shared/ai/builtinAgent'
 import type { AgentSessionEntity } from '@shared/data/api/schemas/agentSessions'
 import type { CherryMessagePart, CherryUIMessage } from '@shared/data/types/message'
 import type { Model } from '@shared/data/types/model'
+import { WH_FEEDBACK_DISABLED } from '@shared/utils/enterpriseFlags'
 
 import AgentChatMain from './AgentChatMain'
 import AgentComposerSlot from './AgentComposerSlot'
@@ -543,7 +544,7 @@ const AgentChat = ({
   return (
     <>
       <AgentChatLayout {...layoutProps} />
-      {canReviewDiagnosticReport && activeDiagnosticReportDraft ? (
+      {!WH_FEEDBACK_DISABLED && canReviewDiagnosticReport && activeDiagnosticReportDraft ? (
         <DiagnosticUploadDialog
           key={activeDiagnosticReportDraft.sessionId}
           initialDescription={activeDiagnosticReportDraft.description}

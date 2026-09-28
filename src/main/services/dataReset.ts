@@ -426,7 +426,7 @@ function wipeV1RemigrationData(failures: string[]): void {
 
   for (const target of targets) {
     try {
-      fs.rmSync(target, RM_OPTIONS)
+      fs.rmSync(toExtendedPath(target), RM_OPTIONS)
     } catch (error) {
       logger.warn('Failed to remove v2 data during v1 remigration cleanup', { target, error: String(error) })
       failures.push(target)
@@ -465,6 +465,16 @@ function showDataResetError(title: string, message: string): void {
 
 function shouldWipe(entry: string): boolean {
   return USER_DATA_WIPE.includes(entry)
+}
+
+/**
+ * Windows reserves device names (nul, con, aux, …) as file names; v1 agent
+ * workspaces occasionally contain one and plain paths then fail with EPERM
+ * on every delete attempt. The `\\?\` extended-path prefix bypasses Win32
+ * name parsing, making such entries removable. No-op on POSIX.
+ */
+function toExtendedPath(p: string): string {
+  return process.platform === 'win32' && !p.startsWith('\\\\?\\') ? `\\\\?\\${p}` : p
 }
 
 /**
@@ -548,11 +558,48 @@ function wipeDirectoryEntries(dir: string, shouldWipeEntry: (entry: string) => b
 
   for (const entry of entries) {
     if (!shouldWipeEntry(entry)) continue
-    try {
-      fs.rmSync(path.join(dir, entry), RM_OPTIONS)
-    } catch (error) {
-      logger.warn('Failed to remove entry during data reset', { entry, error: String(error) })
-      failures.push(path.join(dir, entry))
+    wipeEntry(path.join(dir, entry), failures)
+  }
+}
+
+/**
+ * Depth-first wipe so a failure names the exact locked child instead of the
+ * top-level entry: recurse into directories, remove children individually,
+ * then rmdir the (now empty) directory. Leaves the surviving path behind on
+ * first failure, matching the old all-or-nothing rmSync outcome while making
+ * the failure actionable in logs.
+ */
+function wipeEntry(target: string, failures: string[]): void {
+  const extended = toExtendedPath(target)
+  let stats: fs.Stats | undefined
+  try {
+    stats = fs.lstatSync(extended)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.warn('Failed to inspect entry during data reset', { target, error: String(error) })
+      failures.push(target)
     }
+    return
+  }
+
+  if (stats.isDirectory()) {
+    wipeDirectoryEntries(target, () => true, failures)
+    // The directory may still hold a non-removable child recorded above.
+    try {
+      fs.rmdirSync(extended)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logger.warn('Failed to remove directory during data reset', { target, error: String(error) })
+        if (!failures.includes(target)) failures.push(target)
+      }
+    }
+    return
+  }
+
+  try {
+    fs.rmSync(extended, RM_OPTIONS)
+  } catch (error) {
+    logger.warn('Failed to remove entry during data reset', { target, error: String(error) })
+    failures.push(target)
   }
 }

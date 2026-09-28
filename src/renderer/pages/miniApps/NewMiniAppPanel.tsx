@@ -40,7 +40,7 @@ interface Props {
 type AddTab = 'site' | 'app'
 
 const logger = loggerService.withContext('NewMiniAppPanel')
-const MINI_APP_DEVELOPER_DOCS_URL = 'https://github.com/CherryHQ/cherry-studio-miniapps'
+const MINI_APP_DEVELOPER_DOCS_URL = 'https://portal.example.com'
 
 /**
  * The one "add" dialog. Creating offers two tabs — a custom website, or an installed

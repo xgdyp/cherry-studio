@@ -1,4 +1,4 @@
-import { BookOpen, CircleQuestionMark, Github, MessageSquareText, Sparkles } from 'lucide-react'
+import { BookOpen, CircleQuestionMark, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -8,21 +8,20 @@ import AppLogo from '@renderer/assets/images/logo.png'
 import type { SidebarVisibleLayout } from '@renderer/components/Sidebar'
 import { useMiniAppPopup } from '@renderer/hooks/useMiniAppPopup'
 import { useOpenReleaseNotes } from '@renderer/hooks/useOpenReleaseNotes'
-import { ipcApi } from '@renderer/ipc'
+import { WH_PORTAL_URL } from '@shared/utils/enterpriseFlags'
 
-const GITHUB_REPOSITORY_URL = 'https://github.com/CherryHQ/cherry-studio'
 const logger = loggerService.withContext('HelpMenu')
 
 export function HelpMenu({
   layout,
-  onFeedbackClick,
   onOverlayOpenChange
 }: {
   layout: SidebarVisibleLayout
-  onFeedbackClick: () => void
+  /** WH enterprise: feedback is disabled; kept for callers that still pass a handler. */
+  onFeedbackClick?: () => void
   onOverlayOpenChange?: (open: boolean) => void
 }) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const { openSmartMiniApp } = useMiniAppPopup()
   const openReleaseNotes = useOpenReleaseNotes()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -59,21 +58,12 @@ export function HelpMenu({
   }
 
   const openDocs = () => {
-    const language = i18n.resolvedLanguage ?? i18n.language
-    const url =
-      language === 'zh-CN' || language === 'zh-TW'
-        ? 'https://docs.cherryai.com.cn/'
-        : 'https://docs.cherryai.com.cn/docs/en-us'
     openSmartMiniApp({
-      appId: 'cherrystudio-guide',
+      appId: 'wh-enterprise-guide',
       name: t('help.guide'),
-      url,
+      url: WH_PORTAL_URL,
       logo: AppLogo
     })
-  }
-
-  const openGitHubRepository = () => {
-    return ipcApi.request('system.shell.open_website', GITHUB_REPOSITORY_URL)
   }
 
   const trigger =
@@ -132,20 +122,6 @@ export function HelpMenu({
               icon={<BookOpen size={16} />}
               label={t('help.guide')}
               onClick={() => runAfterClose(openDocs)}
-            />
-            <MenuItem
-              size="sm"
-              className="h-8"
-              icon={<MessageSquareText size={16} />}
-              label={t('help.feedback')}
-              onClick={() => runAfterClose(onFeedbackClick)}
-            />
-            <MenuItem
-              size="sm"
-              className="h-8"
-              icon={<Github size={16} />}
-              label={t('help.star')}
-              onClick={() => runAfterClose(openGitHubRepository)}
             />
           </MenuList>
         </PopoverContent>

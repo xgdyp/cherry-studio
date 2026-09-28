@@ -131,6 +131,21 @@ import { ResourceCreateWizard } from '../ResourceCreateWizard'
 const NEXT = 'library.config.dialogs.create.next'
 const CREATE = 'library.config.dialogs.create.submit'
 const CANCEL = 'common.cancel'
+const ACKNOWLEDGE = 'library.config.dialogs.create.disclaimer.acknowledge'
+const DISCLAIMER_CONTINUE = 'library.config.dialogs.create.disclaimer.continue'
+const DISCLAIMER_DECLINE = 'library.config.dialogs.create.disclaimer.decline'
+const DISCLAIMER_TITLE = 'library.config.dialogs.create.disclaimer.title'
+const DISCLAIMER_PASSWORD_CONTINUE = 'library.config.dialogs.create.disclaimer.password_continue'
+const DISCLAIMER_PASSWORD_PLACEHOLDER = 'library.config.dialogs.create.disclaimer.password_placeholder'
+
+/** The agent kind opens on the liability disclaimer; walk past it (including the
+ * deployment access password gate) to reach the wizard. */
+async function acknowledgeAgentDisclaimer(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('checkbox', { name: ACKNOWLEDGE }))
+  await user.click(screen.getByRole('button', { name: DISCLAIMER_CONTINUE }))
+  await user.type(screen.getByPlaceholderText(DISCLAIMER_PASSWORD_PLACEHOLDER), 'CHANGE-ME')
+  await user.click(screen.getByRole('button', { name: DISCLAIMER_PASSWORD_CONTINUE }))
+}
 
 afterEach(() => {
   cleanup()
@@ -142,8 +157,17 @@ afterEach(() => {
 })
 
 describe('ResourceCreateWizard', () => {
-  it.each(['assistant', 'agent'] as const)('labels the shared authoring step as System Prompt for %s', (kind) => {
-    render(<ResourceCreateWizard kind={kind} open onOpenChange={vi.fn()} onSubmit={vi.fn()} />)
+  it('labels the shared authoring step as System Prompt for assistant', () => {
+    render(<ResourceCreateWizard kind="assistant" open onOpenChange={vi.fn()} onSubmit={vi.fn()} />)
+
+    expect(screen.getByText('library.config.prompt.label')).toBeInTheDocument()
+    expect(screen.queryByText('library.config.dialogs.create.step.persona')).not.toBeInTheDocument()
+  })
+
+  it('labels the shared authoring step as System Prompt for agent', async () => {
+    const user = userEvent.setup()
+    render(<ResourceCreateWizard kind="agent" open onOpenChange={vi.fn()} onSubmit={vi.fn()} />)
+    await acknowledgeAgentDisclaimer(user)
 
     expect(screen.getByText('library.config.prompt.label')).toBeInTheDocument()
     expect(screen.queryByText('library.config.dialogs.create.step.persona')).not.toBeInTheDocument()
@@ -240,6 +264,7 @@ describe('ResourceCreateWizard', () => {
       onSubmit: vi.fn()
     }
     const { rerender } = render(<ResourceCreateWizard {...props} />)
+    await acknowledgeAgentDisclaimer(user)
 
     expect(await screen.findByTestId('model-id')).toHaveTextContent('provider::default')
     await user.click(screen.getByRole('button', { name: 'fill name' }))
@@ -308,6 +333,7 @@ describe('ResourceCreateWizard', () => {
   it('shows the knowledge step after capability for the agent kind', async () => {
     const user = userEvent.setup()
     render(<ResourceCreateWizard kind="agent" open onOpenChange={vi.fn()} onSubmit={vi.fn()} />)
+    await acknowledgeAgentDisclaimer(user)
 
     await user.click(screen.getByRole('button', { name: 'fill basic' }))
     await user.click(screen.getByRole('button', { name: NEXT }))
@@ -326,6 +352,7 @@ describe('ResourceCreateWizard', () => {
     const user = userEvent.setup()
     const props = { open: true, onOpenChange: vi.fn(), onSubmit: vi.fn() }
     const { rerender } = render(<ResourceCreateWizard {...props} kind="agent" />)
+    await acknowledgeAgentDisclaimer(user)
 
     await user.click(screen.getByRole('button', { name: 'fill basic' }))
     await user.click(screen.getByRole('button', { name: NEXT }))
@@ -339,6 +366,7 @@ describe('ResourceCreateWizard', () => {
   it('shows capability and knowledge steps for pi agents', async () => {
     const user = userEvent.setup()
     render(<ResourceCreateWizard kind="agent" open onOpenChange={vi.fn()} onSubmit={vi.fn()} />)
+    await acknowledgeAgentDisclaimer(user)
 
     await user.click(screen.getByRole('button', { name: 'fill pi basic' }))
     await user.click(screen.getByRole('button', { name: NEXT }))
@@ -354,27 +382,33 @@ describe('ResourceCreateWizard', () => {
   })
 
   it('does not prefill the default model for agent kind when rejected by the model filter', async () => {
+    const user = userEvent.setup()
     modelHook.defaultModel = makeModel()
     modelHook.agentModelFilter.mockReturnValue(false)
 
     render(<ResourceCreateWizard kind="agent" open onOpenChange={vi.fn()} onSubmit={vi.fn()} />)
+    await acknowledgeAgentDisclaimer(user)
 
     expect(await screen.findByTestId('model-id')).toHaveTextContent('empty')
   })
 
   it('prefills the default model for agent kind when accepted by the model filter', async () => {
+    const user = userEvent.setup()
     modelHook.defaultModel = makeModel()
 
     render(<ResourceCreateWizard kind="agent" open onOpenChange={vi.fn()} onSubmit={vi.fn()} />)
+    await acknowledgeAgentDisclaimer(user)
 
     expect(await screen.findByTestId('model-id')).toHaveTextContent('provider::default')
   })
 
   it('does not prefill a default model when its provider is disabled', async () => {
+    const user = userEvent.setup()
     modelHook.defaultModel = makeModel()
     modelHook.defaultProvider = { id: 'provider', name: 'Provider', isEnabled: false } as Provider
 
     render(<ResourceCreateWizard kind="agent" open onOpenChange={vi.fn()} onSubmit={vi.fn()} />)
+    await acknowledgeAgentDisclaimer(user)
 
     expect(await screen.findByTestId('model-id')).toHaveTextContent('empty')
   })
@@ -390,6 +424,7 @@ describe('ResourceCreateWizard', () => {
       )
 
       render(<ResourceCreateWizard kind="agent" open onOpenChange={vi.fn()} onSubmit={vi.fn()} />)
+      await acknowledgeAgentDisclaimer(user)
 
       expect(await screen.findByTestId('model-id')).toHaveTextContent('provider::default')
       await user.click(screen.getByRole('button', { name: `switch to ${agentType}` }))
@@ -397,4 +432,75 @@ describe('ResourceCreateWizard', () => {
       await waitFor(() => expect(screen.getByTestId('model-id')).toHaveTextContent('provider::default'))
     }
   )
+})
+
+describe('agent liability disclaimer', () => {
+  it('shows the disclaimer instead of the wizard and keeps Continue disabled until acknowledged', async () => {
+    const user = userEvent.setup()
+    render(<ResourceCreateWizard kind="agent" open onOpenChange={vi.fn()} onSubmit={vi.fn()} />)
+
+    expect(screen.getByRole('heading', { name: DISCLAIMER_TITLE })).toBeInTheDocument()
+    expect(screen.queryByTestId('model-id')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: DISCLAIMER_CONTINUE })).toBeDisabled()
+
+    await user.click(screen.getByRole('checkbox', { name: ACKNOWLEDGE }))
+    expect(screen.getByRole('button', { name: DISCLAIMER_CONTINUE })).toBeEnabled()
+
+    await user.click(screen.getByRole('button', { name: DISCLAIMER_CONTINUE }))
+    // Acknowledging reveals the password gate, not the wizard.
+    expect(screen.getByPlaceholderText(DISCLAIMER_PASSWORD_PLACEHOLDER)).toBeInTheDocument()
+    expect(screen.queryByTestId('model-id')).not.toBeInTheDocument()
+  })
+
+  it('keeps the wizard hidden behind a wrong password and reveals it with the gate password', async () => {
+    const user = userEvent.setup()
+    render(<ResourceCreateWizard kind="agent" open onOpenChange={vi.fn()} onSubmit={vi.fn()} />)
+
+    await user.click(screen.getByRole('checkbox', { name: ACKNOWLEDGE }))
+    await user.click(screen.getByRole('button', { name: DISCLAIMER_CONTINUE }))
+
+    const passwordInput = screen.getByPlaceholderText(DISCLAIMER_PASSWORD_PLACEHOLDER)
+    await user.type(passwordInput, 'wrong')
+    await user.click(screen.getByRole('button', { name: DISCLAIMER_PASSWORD_CONTINUE }))
+    expect(screen.getByText('library.config.dialogs.create.disclaimer.password_incorrect')).toBeInTheDocument()
+    expect(screen.queryByTestId('model-id')).not.toBeInTheDocument()
+
+    await user.clear(passwordInput)
+    await user.type(passwordInput, 'CHANGE-ME')
+    await user.click(screen.getByRole('button', { name: DISCLAIMER_PASSWORD_CONTINUE }))
+
+    expect(await screen.findByTestId('model-id')).toBeInTheDocument()
+  })
+
+  it('closes the dialog without revealing the wizard when declined', async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+    render(<ResourceCreateWizard kind="agent" open onOpenChange={onOpenChange} onSubmit={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: DISCLAIMER_DECLINE }))
+
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(screen.queryByTestId('model-id')).not.toBeInTheDocument()
+  })
+
+  it('never gates the assistant kind on the disclaimer', () => {
+    render(<ResourceCreateWizard kind="assistant" open onOpenChange={vi.fn()} onSubmit={vi.fn()} />)
+
+    expect(screen.queryByRole('heading', { name: DISCLAIMER_TITLE })).not.toBeInTheDocument()
+    expect(screen.getByTestId('model-id')).toBeInTheDocument()
+  })
+
+  it('re-shows the disclaimer after the dialog closes and reopens', async () => {
+    const user = userEvent.setup()
+    const props = { kind: 'agent' as const, onOpenChange: vi.fn(), onSubmit: vi.fn() }
+    const { rerender } = render(<ResourceCreateWizard {...props} open />)
+    await acknowledgeAgentDisclaimer(user)
+    expect(screen.getByTestId('model-id')).toBeInTheDocument()
+
+    rerender(<ResourceCreateWizard {...props} open={false} />)
+    rerender(<ResourceCreateWizard {...props} open />)
+
+    expect(screen.getByRole('heading', { name: DISCLAIMER_TITLE })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: DISCLAIMER_CONTINUE })).toBeDisabled()
+  })
 })

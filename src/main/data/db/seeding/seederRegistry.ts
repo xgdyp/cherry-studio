@@ -1,9 +1,6 @@
 import type { ISeeder } from '../types'
 import { BuiltinMcpServerSeeder } from './seeders/builtinMcpServerSeeder'
 import { CherryAiDefaultModelSeeder } from './seeders/cherryaiDefaultModelSeeder'
-import { CherryAssistantSeeder } from './seeders/cherryAssistantSeeder'
-import { CherrySupportSeeder } from './seeders/cherrySupportSeeder'
-import { DefaultAssistantSeeder } from './seeders/defaultAssistantSeeder'
 import { LegacyFileCleanupPolicySeeder } from './seeders/legacyFileCleanupPolicySeeder'
 import { LocalModelSeeder } from './seeders/LocalModelSeeder'
 import { LongTextPastePreferenceUpgradeSeeder } from './seeders/longTextPastePreferenceUpgradeSeeder'
@@ -16,8 +13,8 @@ import { WebSearchPreferenceUpgradeSeeder } from './seeders/WebSearchPreferenceU
 /**
  * All seeders in execution order.
  *
- * Keep CherryAiDefaultModelSeeder before DefaultAssistantSeeder because the
- * seeded assistant references the CherryAI default model (FK to user_model).
+ * WH fork: the default assistant and builtin agent seeders are intentionally
+ * unregistered — new users start from an empty library.
  *
  * To add a new seeder: create an ISeeder class, add it to this array.
  * No changes to DbService needed.
@@ -25,9 +22,6 @@ import { WebSearchPreferenceUpgradeSeeder } from './seeders/WebSearchPreferenceU
 export const seeders: ISeeder[] = [
   new LegacyFileCleanupPolicySeeder(),
   new CherryAiDefaultModelSeeder(),
-  new CherryAssistantSeeder(),
-  new CherrySupportSeeder(),
-  new DefaultAssistantSeeder(),
   new LongTextPastePreferenceUpgradeSeeder(),
   new WebSearchPreferenceUpgradeSeeder(),
   new PreferenceSeeder(),

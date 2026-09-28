@@ -10,6 +10,7 @@ import {
   scopeToMainIntegration
 } from '@sentry/electron/renderer'
 
+import { WH_TELEMETRY_DISABLED } from '@shared/utils/enterpriseFlags'
 import { getSentryBuildContext, getSentryLogContext, sanitizeSentryEvent } from '@shared/utils/sentry'
 
 import { name, version } from '../../../package.json'
@@ -21,6 +22,8 @@ import { loggerService, resolveWindowSourceFromMeta } from './LoggerService'
  * a window opened with its own `partition` would silently report nothing.
  */
 export function initSentry(): void {
+  // WH enterprise: telemetry disabled — never install the renderer bridge.
+  if (WH_TELEMETRY_DISABLED) return
   if (import.meta.env.DEV) return
   const buildContext = getSentryBuildContext(name, version, __APP_EDITION__)
   const windowSource = resolveWindowSourceFromMeta(document) || 'UNKNOWN'

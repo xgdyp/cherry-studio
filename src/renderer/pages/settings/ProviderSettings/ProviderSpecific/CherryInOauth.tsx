@@ -13,6 +13,7 @@ import { popup } from '@renderer/services/popup'
 import { toast } from '@renderer/services/toast'
 import { cn } from '@renderer/utils/style'
 import type { CherryInBalance } from '@shared/ipc/schemas/cherryin'
+import { WH_OFFICIAL_LOGIN_DISABLED } from '@shared/utils/enterpriseFlags'
 import { hasApiKeys } from '@shared/utils/provider'
 
 const logger = loggerService.withContext('CherryInOauth')
@@ -169,6 +170,11 @@ const CherryInOauth: FC<CherryInOauthProps> = ({ providerId }) => {
   }, [])
 
   if (!provider) {
+    return null
+  }
+
+  // WH enterprise: the CherryIN OAuth card never renders on the intranet.
+  if (WH_OFFICIAL_LOGIN_DISABLED) {
     return null
   }
 

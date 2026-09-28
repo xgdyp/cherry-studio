@@ -6,6 +6,7 @@ import { BUILTIN_MINI_APPS } from '@shared/data/presets/miniApps'
 import type { MiniApp } from '@shared/data/types/miniApp'
 import { AbsoluteFilePathSchema } from '@shared/types/file'
 import { resolveLocalizedText } from '@shared/types/miniAppManifest'
+import { WH_MINIAPP_ONLINE_DISABLED } from '@shared/utils/enterpriseFlags'
 import { toFileUrl } from '@shared/utils/file'
 
 export interface BuiltinMiniAppEntry {
@@ -37,6 +38,9 @@ export function useBuiltinMiniApps(
 ): BuiltinMiniAppEntry[] {
   const [resourcesPath] = useCache('app.path.resources')
   return useMemo(() => {
+    // WH enterprise: the builtin catalog is a list of external chat sites the
+    // intranet cannot reach — offer nothing.
+    if (WH_MINIAPP_ONLINE_DISABLED) return []
     if (!resourcesPath) return []
     const taken = new Set(installed.map((app) => app.presetMiniAppId))
     return BUILTIN_MINI_APPS.filter((e) => !taken.has(e.appId)).map((e) => ({

@@ -8,7 +8,7 @@ import { agentSessionTable } from '@data/db/schemas/agentSession'
 import { agentWorkspaceTable } from '@data/db/schemas/agentWorkspace'
 import { appStateTable } from '@data/db/schemas/appState'
 import { userModelTable } from '@data/db/schemas/userModel'
-import { CherryAiDefaultModelSeeder } from '@data/db/seeding/seeders/cherryaiDefaultModelSeeder'
+import { ensureCherryAiDefaultProviderAndModelTx } from '@data/db/seeding/seeders/cherryaiDefaultModelSeeder'
 import { CherryAssistantSeeder } from '@data/db/seeding/seeders/cherryAssistantSeeder'
 import { SeedRunner } from '@data/db/seeding/SeedRunner'
 import type { ISeeder } from '@data/db/types'
@@ -232,7 +232,8 @@ describe('CherryAssistantSeeder', () => {
   })
 
   it('leaves the model unconfigured when the CherryAI default is the only available model', () => {
-    new SeedRunner(dbh.db).runAll([new CherryAiDefaultModelSeeder(), new CherryAssistantSeeder()])
+    dbh.db.transaction((tx) => ensureCherryAiDefaultProviderAndModelTx(tx))
+    new CherryAssistantSeeder().run(dbh.db)
 
     const [model] = dbh.db
       .select()

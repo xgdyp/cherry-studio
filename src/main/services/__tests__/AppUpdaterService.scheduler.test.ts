@@ -17,7 +17,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { application } from '@application'
 import { BaseService } from '@main/core/lifecycle/BaseService'
 import { SchedulerService } from '@main/core/scheduler/SchedulerService'
-import { regionService } from '@main/services/RegionService'
 
 import { AppUpdaterService } from '../AppUpdaterService'
 
@@ -29,17 +28,6 @@ vi.mock('@logger', () => ({
 
 vi.mock('@main/core/platform', () => ({ isWin: false }))
 
-vi.mock('@main/utils/appEdition', () => ({ getAppEdition: () => 'global' }))
-
-vi.mock('@main/services/RegionService', () => ({
-  regionService: { getCountry: vi.fn(async () => 'US') }
-}))
-
-vi.mock('@main/utils/systemInfo', () => ({
-  generateUserAgent: vi.fn(() => 'test-user-agent'),
-  getClientId: vi.fn(() => 'test-client-id')
-}))
-
 vi.mock('electron', () => ({
   app: {
     isPackaged: true,
@@ -48,7 +36,9 @@ vi.mock('electron', () => ({
   },
   // Real BaseService.ipcHandle calls ipcMain.handle, so the mock must provide it.
   ipcMain: { handle: vi.fn(), removeHandler: vi.fn(), on: vi.fn(), removeListener: vi.fn() },
-  BrowserWindow: vi.fn()
+  BrowserWindow: vi.fn(),
+  // Feed probes must find a reachable MinIO base so checks proceed to the updater.
+  net: { fetch: vi.fn(async () => new Response(null, { status: 200 })) }
 }))
 
 vi.mock('electron-updater', () => ({
@@ -57,9 +47,9 @@ vi.mock('electron-updater', () => ({
     forceDevUpdateConfig: false,
     autoDownload: false,
     autoInstallOnAppQuit: false,
-    requestHeaders: {},
     on: vi.fn(),
     removeListener: vi.fn(),
+    setFeedURL: vi.fn(),
     checkForUpdates: vi.fn(),
     downloadUpdate: vi.fn(),
     quitAndInstall: vi.fn(),
@@ -100,14 +90,10 @@ describe('AppUpdaterService — auto update-check scheduling', () => {
 
     prefValues = {
       'app.dist.auto_update.enabled': true,
-      'app.dist.test_plan.enabled': false,
-      'app.dist.test_plan.channel': undefined,
       'app.language': 'en'
     }
     const prefStub = {
-      get: vi.fn((key: string) => prefValues[key]),
-      // onInit subscribes to test_plan changes; return an unsubscribe fn.
-      subscribeMultipleChanges: vi.fn(() => vi.fn())
+      get: vi.fn((key: string) => prefValues[key])
     }
     const powerStub = { registerShutdownHandler: vi.fn() }
     const analyticsStub = { trackAppUpdate: vi.fn() }
@@ -116,7 +102,7 @@ describe('AppUpdaterService — auto update-check scheduling', () => {
     scheduler = new SchedulerService()
     appUpdater = new AppUpdaterService()
 
-    ;(application.get as ReturnType<typeof vi.fn<(...args: any[]) => any>>).mockImplementation((name: string) => {
+    ;(application.get as ReturnType<typeof vi.fn>).mockImplementation((name: string) => {
       switch (name) {
         case 'PreferenceService':
           return prefStub
@@ -133,9 +119,7 @@ describe('AppUpdaterService — auto update-check scheduling', () => {
       }
     })
 
-    vi.mocked(regionService.getCountry).mockResolvedValue('US')
     vi.mocked(autoUpdater.checkForUpdates).mockResolvedValue(null)
-    autoUpdater.requestHeaders = {}
     autoUpdater.channel = ''
     autoUpdater.allowDowngrade = false
     autoUpdater.disableDifferentialDownload = false

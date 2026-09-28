@@ -54,6 +54,7 @@ import type { StoredEndpointConfigOverride } from '@data/db/schemas/userProvider
 import { loggerService } from '@logger'
 import { ErrorCode, isDataApiError } from '@shared/data/api/errors'
 import type { ProviderPreset, ProviderPresetField } from '@shared/data/api/schemas/providers'
+import { WH_LIMITED_PROVIDER_IDS, WH_MODEL_LIMITS } from '@shared/data/presets/whDefaultModel'
 import type {
   Currency,
   ImageGenerationSupport,
@@ -458,6 +459,24 @@ export function synthesizePresetFromOverride(override: ProtoProviderModelOverrid
     parameterSupport: override.parameterSupport as ProtoModelConfig['parameterSupport'],
     imageGeneration: override.imageGeneration
   }
+}
+
+/**
+ * Custom deployment: WH gateways (zone A / zone B) serve known models with
+ * smaller effective limits than the public catalog. Clamp a matched preset's
+ * limits, or synthesize a preset for an unmatched WH model, so fetched,
+ * created, and served models all carry the WH limits.
+ */
+function applyWhModelLimits(
+  providerId: string,
+  rawModelId: string,
+  presetModel: ProtoModelConfig | null
+): ProtoModelConfig | null {
+  if (!WH_LIMITED_PROVIDER_IDS.includes(providerId)) return presetModel
+  const limits = WH_MODEL_LIMITS[rawModelId.toLowerCase()]
+  if (!limits) return presetModel
+  if (presetModel) return { ...presetModel, ...limits }
+  return { id: rawModelId, name: rawModelId, capabilities: [], ...limits, metadata: {} }
 }
 
 /**
@@ -1091,9 +1110,12 @@ class ProviderRegistryService {
     const loader = this.getLoader()
     const presetProvider = this.resolveProviderPreset(providerContext.id, providerContext.presetProviderId)
     const registryOverride = presetProvider ? loader.findOverride(presetProvider.id, modelId) : null
-    const presetModel =
+    const presetModel = applyWhModelLimits(
+      providerContext.id,
+      modelId,
       loader.findModel(registryOverride?.modelId ?? modelId) ??
-      (registryOverride ? synthesizePresetFromOverride(registryOverride) : null)
+        (registryOverride ? synthesizePresetFromOverride(registryOverride) : null)
+    )
 
     return {
       presetModel,

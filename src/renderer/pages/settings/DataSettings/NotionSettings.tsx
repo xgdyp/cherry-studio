@@ -17,6 +17,7 @@ import { useTheme } from '@renderer/hooks/useTheme'
 import { ipcApi } from '@renderer/ipc'
 import { toast } from '@renderer/services/toast'
 import { formatErrorMessage } from '@renderer/utils/error'
+import { WH_PORTAL_URL } from '@shared/utils/enterpriseFlags'
 
 const logger = loggerService.withContext('NotionSettings')
 
@@ -73,7 +74,7 @@ const NotionSettings: FC = () => {
   }
 
   const handleNotionTitleClick = () => {
-    void ipcApi.request('system.shell.open_website', 'https://docs.cherry-ai.com/advanced-basic/notion')
+    void ipcApi.request('system.shell.open_website', WH_PORTAL_URL)
   }
 
   return (

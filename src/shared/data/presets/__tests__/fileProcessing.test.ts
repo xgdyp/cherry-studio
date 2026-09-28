@@ -84,15 +84,12 @@ describe('FileProcessorTemplatesSchema', () => {
     expect(paddleocr?.capabilities.find((capability) => capability.feature === 'image_to_text')?.modelId).toBe(
       'PP-OCRv6'
     )
-    expect(paddleocr?.capabilities.find((capability) => capability.feature === 'document_to_markdown')?.modelId).toBe(
-      'PaddleOCR-VL-1.6'
-    )
   })
 
   it('declares the product PDF page limits for document processors', () => {
     const limits = Object.fromEntries(
       PRESETS_FILE_PROCESSORS.filter((preset) =>
-        ['paddleocr', 'mineru', 'doc2x', 'mistral', 'local-document', 'open-mineru'].includes(preset.id)
+        ['mineru', 'doc2x', 'local-document', 'open-mineru'].includes(preset.id)
       ).map((preset) => [
         preset.id,
         preset.capabilities.find((capability) => capability.feature === 'document_to_markdown')?.maxInputPages
@@ -100,10 +97,8 @@ describe('FileProcessorTemplatesSchema', () => {
     )
 
     expect(limits).toEqual({
-      paddleocr: 100,
       mineru: 600,
       doc2x: 1000,
-      mistral: 1000,
       'local-document': undefined,
       'open-mineru': undefined
     })
@@ -112,7 +107,7 @@ describe('FileProcessorTemplatesSchema', () => {
   it('declares the document upload byte limits for processors that enforce one', () => {
     const limits = Object.fromEntries(
       PRESETS_FILE_PROCESSORS.filter((preset) =>
-        ['paddleocr', 'mineru', 'doc2x', 'mistral', 'local-document', 'open-mineru'].includes(preset.id)
+        ['mineru', 'doc2x', 'local-document', 'open-mineru'].includes(preset.id)
       ).map((preset) => [
         preset.id,
         preset.capabilities.find((capability) => capability.feature === 'document_to_markdown')?.maxInputBytes
@@ -120,10 +115,8 @@ describe('FileProcessorTemplatesSchema', () => {
     )
 
     expect(limits).toEqual({
-      paddleocr: 50 * MB,
       mineru: 200 * MB,
       doc2x: GB,
-      mistral: undefined,
       'local-document': undefined,
       'open-mineru': 200 * MB
     })

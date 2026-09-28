@@ -45,9 +45,9 @@ describe('SkillsServer', () => {
     vi.clearAllMocks()
   })
 
-  it('exposes exactly search_skills and install_skill', async () => {
+  it('exposes no marketplace tools in the WH enterprise build', async () => {
     const result = await listTools(createServer())
-    expect(result.tools.map((t: any) => t.name)).toEqual(['search_skills', 'install_skill'])
+    expect(result.tools).toEqual([])
   })
 
   describe('search_skills', () => {

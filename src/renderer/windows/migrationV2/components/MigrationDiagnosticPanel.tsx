@@ -7,7 +7,7 @@ import { loggerService } from '@renderer/services/LoggerService'
 
 import { useMigrationActions } from '../hooks/useMigrationProgress'
 
-const SUPPORT_EMAIL = 'support@cherry-ai.com'
+const SUPPORT_PORTAL = 'https://portal.example.com'
 const logger = loggerService.withContext('MigrationDiagnosticPanel')
 
 type DiagnosticStatus = 'idle' | 'saving' | 'saved_with_logs' | 'saved_without_logs' | 'failed'
@@ -84,7 +84,7 @@ export function MigrationDiagnosticPanel({
 
   const handleContact = async () => {
     try {
-      await navigator.clipboard.writeText(SUPPORT_EMAIL)
+      await navigator.clipboard.writeText(SUPPORT_PORTAL)
       showSuccessToast(t('migration.diagnostics.copy_success'))
     } catch {
       showErrorToast(t('migration.diagnostics.copy_failed'))

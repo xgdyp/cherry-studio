@@ -27,6 +27,7 @@ import { toast } from '@renderer/services/toast'
 import { getAppEdition } from '@renderer/utils/appEdition'
 import { checkEntityImageSize, prepareEntityImageBytes } from '@renderer/utils/image'
 import { isEmoji } from '@renderer/utils/naming'
+import { WH_OFFICIAL_LOGIN_DISABLED } from '@shared/utils/enterpriseFlags'
 
 import { EmojiPicker } from './EmojiPicker'
 
@@ -187,7 +188,7 @@ const PopupContainer: React.FC<Props> = ({ open, resolve }) => {
             maxLength={30}
           />
         </RowFlex>
-        {isCnEdition || cloudStatus?.phase === 'signed-in' ? (
+        {!WH_OFFICIAL_LOGIN_DISABLED && (isCnEdition || cloudStatus?.phase === 'signed-in') ? (
           <RowFlex className="border-border-subtle border-t px-5 py-4">
             {cloudStatusLoadState === 'error' ? (
               <ColFlex className="w-full gap-2">

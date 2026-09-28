@@ -94,25 +94,25 @@ describe('resolveProcessorConfig', () => {
 
   it('uses the explicit processor when one is provided', () => {
     MockMainPreferenceServiceUtils.setMultiplePreferenceValues({
-      'feature.file_processing.default_document_to_markdown': 'open-mineru',
+      'feature.file_processing.default_document_to_markdown': 'local-document',
       'feature.file_processing.overrides': {
-        paddleocr: {
+        'open-mineru': {
           capabilities: {
             document_to_markdown: {
-              modelId: 'paddle-custom'
+              modelId: 'custom-model'
             }
           }
         }
       }
     })
 
-    const config = resolveProcessorConfigByFeature('document_to_markdown', 'paddleocr')
+    const config = resolveProcessorConfigByFeature('document_to_markdown', 'open-mineru')
 
-    expect(config.id).toBe('paddleocr')
+    expect(config.id).toBe('open-mineru')
     expect(config.capabilities.find((capability) => capability.feature === 'document_to_markdown')).toEqual(
       expect.objectContaining({
         feature: 'document_to_markdown',
-        modelId: 'paddle-custom'
+        modelId: 'custom-model'
       })
     )
   })
@@ -154,12 +154,15 @@ describe('resolveProcessorConfig', () => {
     expect(resolveDefaultImageToTextProcessorMock).toHaveBeenCalled()
   })
 
-  it('uses mistral when it is the default markdown processor', () => {
-    MockMainPreferenceServiceUtils.setPreferenceValue('feature.file_processing.default_document_to_markdown', 'mistral')
+  it('uses open-mineru when it is the default markdown processor', () => {
+    MockMainPreferenceServiceUtils.setPreferenceValue(
+      'feature.file_processing.default_document_to_markdown',
+      'open-mineru'
+    )
 
     expect(resolveProcessorConfigByFeature('document_to_markdown')).toEqual(
       expect.objectContaining({
-        id: 'mistral'
+        id: 'open-mineru'
       })
     )
   })
@@ -202,8 +205,8 @@ describe('resolveProcessorConfig', () => {
   it('does not probe a local model for processors that need none', () => {
     isLocalModelReadyMock.mockReturnValue(false)
 
-    expect(resolveProcessorConfigByFeature('document_to_markdown', 'paddleocr')).toEqual(
-      expect.objectContaining({ id: 'paddleocr' })
+    expect(resolveProcessorConfigByFeature('document_to_markdown', 'open-mineru')).toEqual(
+      expect.objectContaining({ id: 'open-mineru' })
     )
     expect(isLocalModelReadyMock).not.toHaveBeenCalled()
   })

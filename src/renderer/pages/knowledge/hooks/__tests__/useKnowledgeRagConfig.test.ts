@@ -96,20 +96,18 @@ describe('useKnowledgeRagConfig', () => {
       }
     ])
     mockUseAvailableFileProcessors.mockReturnValue({
-      processorIds: new Set(['paddleocr', 'local-document', 'mineru', 'doc2x', 'mistral', 'open-mineru']),
+      processorIds: new Set(['local-document', 'open-mineru']),
       status: 'ready'
     })
   })
 
-  it('marks unconfigured document processors as unavailable and exposes the save mutation', async () => {
+  it('offers the two self-hosted document processors without requiring API keys', async () => {
     const base = createKnowledgeBase({
-      fileProcessorId: 'paddleocr',
+      fileProcessorId: 'local-document',
       rerankModelId: 'jina::jina-reranker-v2-base-multilingual'
     })
     const { result } = renderHook(() => useKnowledgeRagConfig(base))
 
-    // `statusLabel` is what the row shows on the right; it must track `disabled`
-    // so an unconfigured processor says why rather than looking merely greyed out.
     expect(result.current.fileProcessorOptions).toEqual([
       {
         value: 'local-document',
@@ -117,10 +115,6 @@ describe('useKnowledgeRagConfig', () => {
         disabled: false,
         statusLabel: undefined
       },
-      { value: 'paddleocr', label: 'PaddleOCR', disabled: false, statusLabel: undefined },
-      { value: 'mineru', label: 'MinerU', disabled: true, statusLabel: 'knowledge.rag.processor_not_configured' },
-      { value: 'doc2x', label: 'Doc2X', disabled: true, statusLabel: 'knowledge.rag.processor_not_configured' },
-      { value: 'mistral', label: 'Mistral', disabled: true, statusLabel: 'knowledge.rag.processor_not_configured' },
       { value: 'open-mineru', label: 'Open MinerU', disabled: false, statusLabel: undefined }
     ])
     expect(mockUseMutation).toHaveBeenCalledWith('PATCH', '/knowledge-bases/:id', {
@@ -178,7 +172,7 @@ describe('useKnowledgeRagConfig', () => {
 
   it('offers only processors reported as supported by main', () => {
     mockUseAvailableFileProcessors.mockReturnValue({
-      processorIds: new Set(['paddleocr', 'mineru']),
+      processorIds: new Set(['local-document']),
       status: 'ready'
     })
 
@@ -186,7 +180,7 @@ describe('useKnowledgeRagConfig', () => {
       useKnowledgeRagConfig(createKnowledgeBase({ fileProcessorId: 'local-document' }))
     )
 
-    expect(result.current.fileProcessorOptions.map((option) => option.value)).toEqual(['paddleocr', 'mineru'])
+    expect(result.current.fileProcessorOptions.map((option) => option.value)).toEqual(['local-document'])
   })
 
   it.each(['loading', 'error'] as const)(

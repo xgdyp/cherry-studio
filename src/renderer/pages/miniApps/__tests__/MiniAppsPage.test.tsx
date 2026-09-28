@@ -429,22 +429,14 @@ describe('MiniAppsPage', () => {
     expect(mocks.request).not.toHaveBeenCalledWith('mini_app.install.preview_file', expect.anything())
   })
 
-  it('offers an uninstalled builtin, and routes it to consent rather than open', () => {
+  it('offers no uninstalled builtins in the WH enterprise build', () => {
     mocks.apps = []
     mocks.allApps = []
     render(<MiniAppsPage />)
 
-    expect(screen.getByText('miniApp.builtin.not_installed')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Notes' }))
-
-    // The id goes to the CONSENT flow (the panel requests `preview_builtin` itself);
-    // the installed tile's handler would open a tab for an app with no files on disk.
-    expect(screen.getByTestId('install-mini-app-panel')).toHaveAttribute(
-      'data-builtin-app-id',
-      'com.cherrystudio.miniapp.notes'
-    )
-    expect(mocks.openTab).not.toHaveBeenCalled()
+    // The builtin catalog is external-site only; the enterprise gate offers nothing.
+    expect(screen.queryByText('miniApp.builtin.not_installed')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Notes' })).toBeNull()
   })
 
   it('drops installed builtins from the offer', () => {

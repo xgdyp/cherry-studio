@@ -13,6 +13,7 @@ import {
 } from '@cherrystudio/ui'
 import { ResourceCatalogSearchInput } from '@renderer/components/resourceCatalog/ResourceCatalogSearchInput'
 import type { InstalledSkill } from '@shared/data/types/agent'
+import { WH_SKILL_MARKET_DISABLED } from '@shared/utils/enterpriseFlags'
 
 import { type CatalogItem, CatalogToggleGrid } from '../components/CatalogPicker'
 import { ImportSkillDialog } from './ImportSkillDialog'
@@ -115,10 +116,12 @@ export function SkillCatalogPicker({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-44" portalContainer={portalContainer}>
-            <DropdownMenuItem onSelect={() => setMarketplaceOpen(true)}>
-              <Search />
-              {t('library.skill_add.online_search')}
-            </DropdownMenuItem>
+            {!WH_SKILL_MARKET_DISABLED && (
+              <DropdownMenuItem onSelect={() => setMarketplaceOpen(true)}>
+                <Search />
+                {t('library.skill_add.online_search')}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onSelect={() => setImportOpen(true)}>
               <Import />
               {t('library.skill_add.local_import')}

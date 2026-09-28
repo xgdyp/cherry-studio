@@ -5,4 +5,4 @@
 # repo: cherry-studio
 # owner: kangfenmao
 provider: generic
-url: http://127.0.0.1:3378
+url: http://updates-a.example.com:9000/cherrydeploy-updates/win/

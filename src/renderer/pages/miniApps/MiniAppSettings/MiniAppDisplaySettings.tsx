@@ -9,6 +9,7 @@ import Selector from '@renderer/components/Selector'
 import { toast } from '@renderer/services/toast'
 import { getAppEdition } from '@renderer/utils/appEdition'
 import type { MiniAppRegionFilter } from '@shared/data/types/miniApp'
+import { WH_MINIAPP_ONLINE_DISABLED } from '@shared/utils/enterpriseFlags'
 
 const DEFAULT_MAX_KEEPALIVE = 3
 
@@ -81,11 +82,13 @@ const MiniAppDisplaySettings: FC = () => {
           action={<Switch checked={openLinkExternal} onCheckedChange={(v) => setOpenLinkExternal(v)} />}
         />
 
-        <PageSidePanelItem
-          title={t('settings.miniApps.check_updates_on_open.title')}
-          description={t('settings.miniApps.check_updates_on_open.description')}
-          action={<Switch checked={checkUpdatesOnOpen} onCheckedChange={(v) => setCheckUpdatesOnOpen(v)} />}
-        />
+        {!WH_MINIAPP_ONLINE_DISABLED && (
+          <PageSidePanelItem
+            title={t('settings.miniApps.check_updates_on_open.title')}
+            description={t('settings.miniApps.check_updates_on_open.description')}
+            action={<Switch checked={checkUpdatesOnOpen} onCheckedChange={(v) => setCheckUpdatesOnOpen(v)} />}
+          />
+        )}
 
         <PageSidePanelItem
           title={t('settings.miniApps.cache_title')}

@@ -6,6 +6,7 @@ import winston from 'winston'
 import { application } from '@application'
 import { loggerService } from '@logger'
 import { isDataCollectionConsented } from '@main/utils/privacyConsent'
+import { WH_TELEMETRY_DISABLED } from '@shared/utils/enterpriseFlags'
 import { getSentryBuildContext, getSentryLogContext, sanitizeSentryEvent } from '@shared/utils/sentry'
 
 import { name, version } from '../../../package.json'
@@ -54,6 +55,9 @@ function consentGranted(): boolean {
 }
 
 export function initSentry(): void {
+  // WH enterprise: crash reports go nowhere — the Sentry DSN is an external
+  // host and the corporate build must not open that connection at all.
+  if (WH_TELEMETRY_DISABLED) return
   if (import.meta.env.DEV) return
   const buildContext = getSentryBuildContext(name, version, __APP_EDITION__)
 
@@ -82,6 +86,7 @@ export function initSentry(): void {
 }
 
 export function attachSentryLogTransport(): () => void {
+  if (WH_TELEMETRY_DISABLED) return () => {}
   const baseLogger = loggerService.getBaseLogger()
   const stream = new Writable({
     objectMode: true,

@@ -1,14 +1,12 @@
 import type { UpdateInfo } from 'builder-util-runtime'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { appEditionState, netFetchMock, releaseNotesCheckMock, releaseNotesUpdaterInstances, trackAppUpdateMock } =
-  vi.hoisted(() => ({
-    appEditionState: { current: 'global' },
-    netFetchMock: vi.fn(),
-    releaseNotesCheckMock: vi.fn(),
-    releaseNotesUpdaterInstances: [] as Array<Record<string, unknown>>,
-    trackAppUpdateMock: vi.fn()
-  }))
+const { netFetchMock, releaseNotesCheckMock, releaseNotesUpdaterInstances, trackAppUpdateMock } = vi.hoisted(() => ({
+  netFetchMock: vi.fn(),
+  releaseNotesCheckMock: vi.fn(),
+  releaseNotesUpdaterInstances: [] as Array<Record<string, unknown>>,
+  trackAppUpdateMock: vi.fn()
+}))
 
 vi.mock('@logger', () => ({
   loggerService: {
@@ -53,19 +51,6 @@ vi.mock('@main/core/platform', () => ({
   isWin: false
 }))
 
-vi.mock('@main/utils/appEdition', () => ({
-  getAppEdition: () => appEditionState.current
-}))
-
-vi.mock('@main/services/RegionService', () => ({
-  regionService: { getCountry: vi.fn(async () => 'US') }
-}))
-
-vi.mock('@main/utils/systemInfo', () => ({
-  generateUserAgent: vi.fn(() => 'test-user-agent'),
-  getClientId: vi.fn(() => 'test-client-id')
-}))
-
 vi.mock('electron', () => ({
   app: {
     isPackaged: true,
@@ -82,7 +67,7 @@ vi.mock('electron-updater', () => {
     channel = ''
     forceDevUpdateConfig = false
     logger: unknown = null
-    requestHeaders: Record<string, string> = {}
+    setFeedURL = vi.fn()
 
     constructor(public options?: unknown) {
       releaseNotesUpdaterInstances.push(this as unknown as Record<string, unknown>)
@@ -99,9 +84,9 @@ vi.mock('electron-updater', () => {
       forceDevUpdateConfig: false,
       autoDownload: false,
       autoInstallOnAppQuit: false,
-      requestHeaders: {},
       on: vi.fn(),
       removeListener: vi.fn(),
+      setFeedURL: vi.fn(),
       checkForUpdates: vi.fn(),
       downloadUpdate: vi.fn(),
       quitAndInstall: vi.fn(),
@@ -121,11 +106,19 @@ import { app, net } from 'electron'
 import { autoUpdater } from 'electron-updater'
 
 import { application } from '@application'
-import { regionService } from '@main/services/RegionService'
-import { UpgradeChannel } from '@shared/data/preference/preferenceTypes'
-import { APP_NAME } from '@shared/utils/constants'
 
 import { AppUpdaterService } from '../AppUpdaterService'
+
+// Must mirror the private feed constants in AppUpdaterService.ts.
+const UPDATE_FEED_BASES = ['http://updates-a.example.com:9000', 'http://updates-b.example.com:9000']
+const UPDATE_FEED_URL = `${UPDATE_FEED_BASES[0]}/cherrydeploy-updates/win/`
+
+/** Probe responses succeed with HTTP 200 by default; override for offline cases. */
+function mockReachableProbes() {
+  netFetchMock.mockImplementation((url: unknown) =>
+    Promise.resolve(new Response(null, { status: String(url).includes('latest.yml') ? 200 : 404 }))
+  )
+}
 
 describe('AppUpdaterService', () => {
   let appUpdater: AppUpdaterService
@@ -133,123 +126,46 @@ describe('AppUpdaterService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     MockMainPreferenceServiceUtils.resetMocks()
-    MockMainPreferenceServiceUtils.setPreferenceValue('app.dist.test_plan.enabled', false)
-    MockMainPreferenceServiceUtils.setPreferenceValue('app.dist.test_plan.channel', UpgradeChannel.LATEST)
     vi.mocked(app.getVersion).mockReturnValue('1.0.0')
-    vi.mocked(regionService.getCountry).mockResolvedValue('US')
     vi.mocked(autoUpdater.checkForUpdates).mockResolvedValue(null)
     netFetchMock.mockReset()
-    appEditionState.current = 'global'
     releaseNotesCheckMock.mockReset().mockResolvedValue(null)
     releaseNotesUpdaterInstances.length = 0
-    autoUpdater.requestHeaders = {}
     autoUpdater.channel = ''
     autoUpdater.allowDowngrade = false
     autoUpdater.disableDifferentialDownload = false
     appUpdater = new AppUpdaterService()
   })
 
-  describe('managed update feed', () => {
-    it('uses the latest channel and global region outside China', async () => {
+  describe('MinIO update feed', () => {
+    it('configures the generic MinIO feed on the latest channel', async () => {
+      mockReachableProbes()
       await (appUpdater as any).configureUpdaterForCheck()
 
-      expect(autoUpdater.channel).toBe(UpgradeChannel.LATEST)
-      expect(autoUpdater.requestHeaders).toMatchObject({
-        'User-Agent': 'test-user-agent',
-        'Cache-Control': 'no-cache',
-        'Client-Id': 'test-client-id',
-        'App-Name': APP_NAME,
-        'App-Version': 'v1.0.0',
-        OS: process.platform,
-        'X-Edition': 'global',
-        'X-Region': 'global'
-      })
-      expect(autoUpdater.requestHeaders).not.toHaveProperty('X-Release-Channel')
+      expect(autoUpdater.setFeedURL).toHaveBeenCalledWith({ provider: 'generic', url: UPDATE_FEED_URL })
+      expect(autoUpdater.channel).toBe('latest')
       expect(autoUpdater.allowDowngrade).toBe(false)
       expect(autoUpdater.disableDifferentialDownload).toBe(true)
     })
 
-    it('uses the China region for users in China', async () => {
-      vi.mocked(regionService.getCountry).mockResolvedValue('CN')
+    it('falls back to the second MinIO base when the first zone is unreachable', async () => {
+      netFetchMock.mockImplementation((url: unknown) =>
+        Promise.resolve(new Response(null, { status: String(url).includes(UPDATE_FEED_BASES[0]) ? 503 : 200 }))
+      )
 
       await (appUpdater as any).configureUpdaterForCheck()
 
-      expect(autoUpdater.channel).toBe(UpgradeChannel.LATEST)
-      expect(autoUpdater.requestHeaders).toMatchObject({
-        'X-Region': 'cn'
-      })
-      expect(autoUpdater.requestHeaders).not.toHaveProperty('X-Release-Channel')
-    })
-
-    it('uses the China edition stable channel', async () => {
-      appEditionState.current = 'cn'
-
-      await (appUpdater as any).configureUpdaterForCheck()
-
-      expect(autoUpdater.channel).toBe('latest-cn')
-      expect(autoUpdater.requestHeaders).toMatchObject({
-        'X-Edition': 'cn',
-        'X-Region': 'global'
+      expect(autoUpdater.setFeedURL).toHaveBeenCalledWith({
+        provider: 'generic',
+        url: `${UPDATE_FEED_BASES[1]}/cherrydeploy-updates/win/`
       })
     })
 
-    it('keeps existing updater request headers', async () => {
-      autoUpdater.requestHeaders = { Authorization: 'existing-header' }
-
-      await (appUpdater as any).configureUpdaterForCheck()
-
-      expect(autoUpdater.requestHeaders).toMatchObject({
-        Authorization: 'existing-header',
-        'X-Region': 'global'
-      })
-    })
-
-    it.each([
-      ['RC', UpgradeChannel.RC],
-      ['Beta', UpgradeChannel.BETA]
-    ])('requests the %s manifest when that test channel is enabled', async (_label, channel) => {
-      MockMainPreferenceServiceUtils.setPreferenceValue('app.dist.test_plan.enabled', true)
-      MockMainPreferenceServiceUtils.setPreferenceValue('app.dist.test_plan.channel', channel)
-
-      await (appUpdater as any).configureUpdaterForCheck()
-
-      expect(autoUpdater.channel).toBe(channel)
-    })
-
-    it.each([
-      ['RC', UpgradeChannel.RC, 'rc-cn'],
-      ['Beta', UpgradeChannel.BETA, 'beta-cn']
-    ])(
-      'requests the China edition %s manifest when that test channel is enabled',
-      async (_label, channel, expected) => {
-        appEditionState.current = 'cn'
-        MockMainPreferenceServiceUtils.setPreferenceValue('app.dist.test_plan.enabled', true)
-        MockMainPreferenceServiceUtils.setPreferenceValue('app.dist.test_plan.channel', channel)
-
-        await (appUpdater as any).configureUpdaterForCheck()
-
-        expect(autoUpdater.channel).toBe(expected)
-      }
-    )
-
-    it('uses the selected test channel when the installed prerelease came from another channel', async () => {
-      vi.mocked(app.getVersion).mockReturnValue('2.0.0-rc.1')
-      MockMainPreferenceServiceUtils.setPreferenceValue('app.dist.test_plan.enabled', true)
-      MockMainPreferenceServiceUtils.setPreferenceValue('app.dist.test_plan.channel', UpgradeChannel.BETA)
-
-      await (appUpdater as any).configureUpdaterForCheck()
-
-      expect(autoUpdater.channel).toBe(UpgradeChannel.BETA)
-    })
-
-    it('applies the channel and request headers before checking for updates', async () => {
+    it('applies the feed before checking for updates', async () => {
+      mockReachableProbes()
       vi.mocked(autoUpdater.checkForUpdates).mockImplementation(async () => {
-        expect(autoUpdater.channel).toBe(UpgradeChannel.LATEST)
-        expect(autoUpdater.requestHeaders).toMatchObject({
-          'App-Version': 'v1.0.0',
-          'X-Edition': 'global',
-          'X-Region': 'global'
-        })
+        expect(autoUpdater.setFeedURL).toHaveBeenCalledWith({ provider: 'generic', url: UPDATE_FEED_URL })
+        expect(autoUpdater.channel).toBe('latest')
         return null
       })
 
@@ -258,8 +174,7 @@ describe('AppUpdaterService', () => {
       expect(autoUpdater.checkForUpdates).toHaveBeenCalledOnce()
     })
 
-    it('fetches and validates release history through the managed release service', async () => {
-      vi.mocked(regionService.getCountry).mockResolvedValue('CN')
+    it('fetches and validates release history from the MinIO bucket', async () => {
       const releaseNotes = '<!--LANG:en-->Remote notes<!--LANG:zh-CN-->远端说明<!--LANG:END-->'
       const history = [{ releaseNotes, version: '1.1.0' }]
       netFetchMock.mockResolvedValue(new Response(JSON.stringify(history)))
@@ -267,13 +182,8 @@ describe('AppUpdaterService', () => {
       await expect(appUpdater.getReleaseHistory()).resolves.toEqual(history)
 
       expect(net.fetch).toHaveBeenCalledWith(
-        'https://releases.cherry-ai.com/release-history.json',
+        `${UPDATE_FEED_URL}release-history.json`,
         expect.objectContaining({
-          headers: expect.objectContaining({
-            'App-Version': 'v1.0.0',
-            'X-Edition': 'global',
-            'X-Region': 'cn'
-          }),
           redirect: 'follow',
           signal: expect.any(AbortSignal)
         })
@@ -281,38 +191,37 @@ describe('AppUpdaterService', () => {
       expect(releaseNotesUpdaterInstances).toHaveLength(1)
     })
 
-    it('uses the China edition channel for the latest release notes request', async () => {
-      appEditionState.current = 'cn'
-      MockMainPreferenceServiceUtils.setPreferenceValue('app.dist.test_plan.enabled', true)
-      MockMainPreferenceServiceUtils.setPreferenceValue('app.dist.test_plan.channel', UpgradeChannel.RC)
-      releaseNotesCheckMock.mockResolvedValue(null)
-
-      await appUpdater.getLatestReleaseNotes()
-
-      expect(releaseNotesUpdaterInstances).toHaveLength(1)
-      expect(releaseNotesUpdaterInstances[0]).toMatchObject({
-        channel: 'rc-cn',
-        requestHeaders: expect.objectContaining({ 'X-Edition': 'cn' })
-      })
-    })
-
-    it('merges a newer channel release with stable release history', async () => {
-      const stableNotes = '<!--LANG:en-->Stable notes<!--LANG:zh-CN-->稳定版说明<!--LANG:END-->'
-      const rcNotes = '<!--LANG:en-->RC notes<!--LANG:zh-CN-->测试版说明<!--LANG:END-->'
-      netFetchMock.mockResolvedValue(new Response(JSON.stringify([{ releaseNotes: stableNotes, version: '1.1.0' }])))
+    it('targets the same MinIO feed on the release-notes updater instance', async () => {
       releaseNotesCheckMock.mockResolvedValue({
         isUpdateAvailable: true,
-        updateInfo: { releaseNotes: rcNotes, version: '1.2.0-rc.1' }
+        updateInfo: { releaseNotes: 'New release notes', version: '1.1.0' }
       })
+      // Probes succeed; only the release-history fetch goes offline.
+      netFetchMock.mockImplementation((url: unknown) =>
+        String(url).includes('latest.yml')
+          ? Promise.resolve(new Response(null, { status: 200 }))
+          : Promise.reject(new Error('offline'))
+      )
 
       await expect(appUpdater.getReleaseHistory()).resolves.toEqual([
-        { releaseNotes: rcNotes, version: '1.2.0-rc.1' },
-        { releaseNotes: stableNotes, version: '1.1.0' }
+        { releaseNotes: 'New release notes', version: '1.1.0' }
       ])
+
+      const notesUpdater = releaseNotesUpdaterInstances[0] as unknown as {
+        setFeedURL: ReturnType<typeof vi.fn>
+        channel: string
+      }
+      expect(notesUpdater.setFeedURL).toHaveBeenCalledWith({ provider: 'generic', url: UPDATE_FEED_URL })
+      expect(notesUpdater.channel).toBe('latest')
     })
 
     it('keeps newer updater notes when release history is unavailable', async () => {
-      netFetchMock.mockRejectedValue(new Error('offline'))
+      // Probes succeed; only the release-history fetch goes offline.
+      netFetchMock.mockImplementation((url: unknown) =>
+        String(url).includes('latest.yml')
+          ? Promise.resolve(new Response(null, { status: 200 }))
+          : Promise.reject(new Error('offline'))
+      )
       releaseNotesCheckMock.mockResolvedValue({
         isUpdateAvailable: true,
         updateInfo: { releaseNotes: 'New release notes', version: '1.1.0' }
@@ -323,14 +232,19 @@ describe('AppUpdaterService', () => {
       ])
     })
 
-    it('falls back to bundled history when the managed response is invalid', async () => {
+    it('falls back to no history when the bucket response is invalid', async () => {
       netFetchMock.mockResolvedValue(new Response(JSON.stringify([{ releaseNotes: 'English only', version: '1.1.0' }])))
 
       await expect(appUpdater.getReleaseHistory()).resolves.toBeNull()
     })
 
-    it('falls back to bundled history when the managed request fails', async () => {
-      netFetchMock.mockRejectedValue(new Error('offline'))
+    it('falls back to no history when the bucket request fails', async () => {
+      // Probes succeed; only the release-history fetch goes offline.
+      netFetchMock.mockImplementation((url: unknown) =>
+        String(url).includes('latest.yml')
+          ? Promise.resolve(new Response(null, { status: 200 }))
+          : Promise.reject(new Error('offline'))
+      )
 
       await expect(appUpdater.getReleaseHistory()).resolves.toBeNull()
     })

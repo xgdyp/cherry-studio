@@ -73,7 +73,8 @@ interface Props {
   onImportAssistant: () => void
   /** Open the community assistant library dialog. When omitted the add menu hides the library item. */
   onOpenAssistantLibrary?: () => void
-  onOpenSkillMarketplace: () => void
+  /** Open the skill marketplace. When omitted (WH enterprise) the add menu hides the online-search item. */
+  onOpenSkillMarketplace?: () => void
   onOpenSystemSkills?: () => void
   groups: GroupItem[]
   activeGroupId: string | null
@@ -158,7 +159,7 @@ function AssistantAddActions({ onNew, onImport, onOpenLibrary }: AssistantAddAct
 }
 
 interface SkillAddActionsProps {
-  onSearchMarketplace: () => void
+  onSearchMarketplace?: () => void
   onSearchSystem?: () => void
   onImportLocal: () => void
 }
@@ -176,10 +177,12 @@ function SkillAddActions({ onSearchMarketplace, onSearchSystem, onImportLocal }:
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-40">
-        <DropdownMenuItem onSelect={onSearchMarketplace} className="gap-2">
-          <Search size={13} />
-          <span>{t('library.skill_add.online_search')}</span>
-        </DropdownMenuItem>
+        {onSearchMarketplace ? (
+          <DropdownMenuItem onSelect={onSearchMarketplace} className="gap-2">
+            <Search size={13} />
+            <span>{t('library.skill_add.online_search')}</span>
+          </DropdownMenuItem>
+        ) : null}
         {onSearchSystem ? (
           <DropdownMenuItem onSelect={onSearchSystem} className="gap-2">
             <FolderSearch size={13} />

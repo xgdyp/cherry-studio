@@ -2,7 +2,17 @@ import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } fro
 import { useForm, type UseFormReturn, useFormState, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Dialog, DialogContent, DialogTitle, Form, MenuItem, Scrollbar } from '@cherrystudio/ui'
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  Form,
+  Input,
+  MenuItem,
+  Scrollbar
+} from '@cherrystudio/ui'
 import { cn } from '@cherrystudio/ui/lib/utils'
 import type { ModelSelectorFilter } from '@renderer/components/ModelSelector'
 import { useAgentModelDisabled, useAgentModelFilter } from '@renderer/hooks/agent/useAgentModelFilter'
@@ -37,6 +47,9 @@ type ResourceCreateWizardProps = {
 }
 
 type StepId = 'basic' | 'system-prompt' | 'knowledge' | 'capability'
+
+/** Custom deployment: password required after the agent liability disclaimer. */
+const WH_AGENT_CREATE_PASSWORD = 'CHANGE-ME'
 
 /** The avatar a brand-new resource starts with — exported so callers can preview what they'd create. */
 export function getResourceCreateDefaultAvatar(kind: ResourceCreateWizardKind) {
@@ -112,6 +125,95 @@ function WizardFooter({
 }
 
 /**
+ * Liability disclaimer shown before the agent create flow. Continuing stays
+ * disabled until the acknowledgement checkbox is checked; declining closes
+ * the dialog without ever rendering the wizard steps.
+ *
+ * Custom deployment: acknowledging the disclaimer then requires the
+ * access password before the wizard steps are revealed.
+ */
+function AgentDisclaimerStep({ onAcknowledge, onDecline }: { onAcknowledge: () => void; onDecline: () => void }) {
+  const { t } = useTranslation()
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [passwordInput, setPasswordInput] = useState('')
+  const [passwordError, setPasswordError] = useState(false)
+  const [passwordRequired, setPasswordRequired] = useState(false)
+
+  const submitPassword = () => {
+    if (passwordInput === WH_AGENT_CREATE_PASSWORD) {
+      onAcknowledge()
+      return
+    }
+    setPasswordError(true)
+  }
+
+  return (
+    <div className="flex flex-col">
+      <div className={resourceDialogHeaderClassName}>
+        <div className="min-w-0">
+          <DialogTitle className={resourceDialogTitleClassName}>
+            {t('library.config.dialogs.create.disclaimer.title')}
+          </DialogTitle>
+        </div>
+      </div>
+      <div className="flex flex-col gap-4 px-6 py-5">
+        <p className="text-muted-foreground text-sm leading-6">
+          {t('library.config.dialogs.create.disclaimer.description')}
+        </p>
+        <label htmlFor="agent-disclaimer-acknowledge" className="flex cursor-pointer items-center gap-2 text-sm">
+          <Checkbox
+            id="agent-disclaimer-acknowledge"
+            checked={acknowledged}
+            onCheckedChange={(checked) => setAcknowledged(checked === true)}
+          />
+          <span>{t('library.config.dialogs.create.disclaimer.acknowledge')}</span>
+        </label>
+        {passwordRequired ? (
+          <form
+            className="flex flex-col gap-2"
+            onSubmit={(event) => {
+              event.preventDefault()
+              submitPassword()
+            }}>
+            <Input
+              type="password"
+              value={passwordInput}
+              autoFocus
+              autoComplete="off"
+              aria-invalid={passwordError}
+              placeholder={t('library.config.dialogs.create.disclaimer.password_placeholder')}
+              onChange={(event) => {
+                setPasswordInput(event.target.value)
+                if (passwordError) setPasswordError(false)
+              }}
+            />
+            {passwordError ? (
+              <p className="m-0 text-destructive text-xs">
+                {t('library.config.dialogs.create.disclaimer.password_incorrect')}
+              </p>
+            ) : null}
+          </form>
+        ) : null}
+        <div className="flex items-center justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onDecline}>
+            {t('library.config.dialogs.create.disclaimer.decline')}
+          </Button>
+          {passwordRequired ? (
+            <Button type="button" disabled={!passwordInput} onClick={submitPassword}>
+              {t('library.config.dialogs.create.disclaimer.password_continue')}
+            </Button>
+          ) : (
+            <Button type="button" disabled={!acknowledged} onClick={() => acknowledged && setPasswordRequired(true)}>
+              {t('library.config.dialogs.create.disclaimer.continue')}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
  * Stepped create flow shared by assistant + agent. Steps 1–2 (basic info,
  * System Prompt) are identical across kinds; agents then configure skills before
  * both kinds configure knowledge bases. A left rail tracks step progress
@@ -156,6 +258,10 @@ export function ResourceCreateWizard({
   const [dialogContentElement, setDialogContentElement] = useState<HTMLDivElement | null>(null)
   const [dialogKey, setDialogKey] = useState(0)
   const pendingCloseActionRef = useRef<(() => void) | null>(null)
+  // Agent creation is gated behind the liability disclaimer; reset per open so
+  // every create flow re-acknowledges.
+  const [disclaimerAcknowledged, setDisclaimerAcknowledged] = useState(false)
+  const showDisclaimer = kind === 'agent' && !disclaimerAcknowledged
 
   // Combine the parent's async-submit flag with RHF's own isSubmitting so close
   // protection (overlay / Esc / X / knowledge-page navigation) stays locked for the
@@ -188,6 +294,7 @@ export function ResourceCreateWizard({
     form.reset(getDefaultValues(kind, initialName))
     form.clearErrors()
     setStepIndex(0)
+    setDisclaimerAcknowledged(false)
   })
 
   useEffect(() => {
@@ -302,89 +409,103 @@ export function ResourceCreateWizard({
       <DialogContent
         ref={setDialogContentElement}
         closeOnOverlayClick={!submitting}
-        size="xl"
-        className={cn('flex h-[min(600px,76vh)] flex-col gap-0 p-0', resourceDialogCloseButtonClassName)}
+        size={showDisclaimer ? 'default' : 'xl'}
+        className={cn(
+          showDisclaimer ? 'gap-0 p-0 sm:max-w-[460px]' : 'flex h-[min(600px,76vh)] flex-col gap-0 p-0',
+          resourceDialogCloseButtonClassName
+        )}
         onPointerDownOutside={(event) => submitting && event.preventDefault()}>
-        {/* Header — title */}
-        <div className={resourceDialogHeaderClassName}>
-          <div className="min-w-0">
-            <DialogTitle className={resourceDialogTitleClassName}>{title}</DialogTitle>
-          </div>
-        </div>
-
-        <Form {...form}>
-          <form onSubmit={(event) => event.preventDefault()} className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="flex min-h-0 flex-1">
-              {/* Step rail */}
-              <ol className="w-48 shrink-0 space-y-1 border-border border-r-[0.5px] bg-background-subtle p-3">
-                {steps.map((step, index) => {
-                  const active = index === stepIndex
-                  const done = index < stepIndex
-                  return (
-                    <li key={step.id}>
-                      <MenuItem
-                        icon={
-                          <span
-                            className={cn(
-                              'flex size-5 shrink-0 items-center justify-center rounded-full font-medium text-[11px]',
-                              active
-                                ? 'bg-foreground text-background'
-                                : done
-                                  ? 'bg-foreground/10 text-foreground'
-                                  : 'border border-border text-muted-foreground'
-                            )}>
-                            {index + 1}
-                          </span>
-                        }
-                        label={step.label}
-                        active={active}
-                        disabled={!done}
-                        onClick={() => done && setStepIndex(index)}
-                        aria-current={active ? 'step' : undefined}
-                        className={cn(resourceDialogRailItemClassName, 'disabled:opacity-100')}
-                      />
-                    </li>
-                  )
-                })}
-              </ol>
-
-              {/* Active step */}
-              <Scrollbar className="min-w-0 flex-1 px-6 py-5">
-                {currentStep.id === 'basic' ? (
-                  <BasicInfoStep
-                    form={form}
-                    portalContainer={dialogContentElement}
-                    fallbackAvatar={getResourceCreateDefaultAvatar(kind)}
-                    modelFilter={activeModelFilter}
-                    isModelDisabled={isModelDisabled}
-                    runtimeSelectable={kind === 'agent'}
-                    onSettingsNavigate={closeBeforeAction}
-                  />
-                ) : null}
-                {currentStep.id === 'system-prompt' ? (
-                  <SystemPromptStep form={form} portalContainer={dialogContentElement} />
-                ) : null}
-                {currentStep.id === 'knowledge' ? (
-                  <KnowledgeStep form={form} isSubmitting={submitting} portalContainer={dialogContentElement} />
-                ) : null}
-                {currentStep.id === 'capability' ? (
-                  <CapabilityStep form={form} portalContainer={dialogContentElement} />
-                ) : null}
-              </Scrollbar>
+        {showDisclaimer ? (
+          <AgentDisclaimerStep
+            onAcknowledge={() => setDisclaimerAcknowledged(true)}
+            onDecline={() => onOpenChange(false)}
+          />
+        ) : (
+          <>
+            {/* Header — title */}
+            <div className={resourceDialogHeaderClassName}>
+              <div className="min-w-0">
+                <DialogTitle className={resourceDialogTitleClassName}>{title}</DialogTitle>
+              </div>
             </div>
 
-            <WizardFooter
-              form={form}
-              stepIndex={stepIndex}
-              isLast={isLast}
-              isSubmitting={isSubmitting}
-              onCancel={() => onOpenChange(false)}
-              onBack={goBack}
-              onNext={goNext}
-              onCreate={() => void handleCreate()}
-            />
-          </form>
-        </Form>
+            <Form {...form}>
+              <form
+                onSubmit={(event) => event.preventDefault()}
+                className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="flex min-h-0 flex-1">
+                  {/* Step rail */}
+                  <ol className="w-48 shrink-0 space-y-1 border-border border-r-[0.5px] bg-background-subtle p-3">
+                    {steps.map((step, index) => {
+                      const active = index === stepIndex
+                      const done = index < stepIndex
+                      return (
+                        <li key={step.id}>
+                          <MenuItem
+                            icon={
+                              <span
+                                className={cn(
+                                  'flex size-5 shrink-0 items-center justify-center rounded-full font-medium text-[11px]',
+                                  active
+                                    ? 'bg-foreground text-background'
+                                    : done
+                                      ? 'bg-foreground/10 text-foreground'
+                                      : 'border border-border text-muted-foreground'
+                                )}>
+                                {index + 1}
+                              </span>
+                            }
+                            label={step.label}
+                            active={active}
+                            disabled={!done}
+                            onClick={() => done && setStepIndex(index)}
+                            aria-current={active ? 'step' : undefined}
+                            className={cn(resourceDialogRailItemClassName, 'disabled:opacity-100')}
+                          />
+                        </li>
+                      )
+                    })}
+                  </ol>
+
+                  {/* Active step */}
+                  <Scrollbar className="min-w-0 flex-1 px-6 py-5">
+                    {currentStep.id === 'basic' ? (
+                      <BasicInfoStep
+                        form={form}
+                        portalContainer={dialogContentElement}
+                        fallbackAvatar={getResourceCreateDefaultAvatar(kind)}
+                        modelFilter={activeModelFilter}
+                        isModelDisabled={isModelDisabled}
+                        runtimeSelectable={kind === 'agent'}
+                        onSettingsNavigate={closeBeforeAction}
+                      />
+                    ) : null}
+                    {currentStep.id === 'system-prompt' ? (
+                      <SystemPromptStep form={form} portalContainer={dialogContentElement} />
+                    ) : null}
+                    {currentStep.id === 'knowledge' ? (
+                      <KnowledgeStep form={form} isSubmitting={submitting} portalContainer={dialogContentElement} />
+                    ) : null}
+                    {currentStep.id === 'capability' ? (
+                      <CapabilityStep form={form} portalContainer={dialogContentElement} />
+                    ) : null}
+                  </Scrollbar>
+                </div>
+
+                <WizardFooter
+                  form={form}
+                  stepIndex={stepIndex}
+                  isLast={isLast}
+                  isSubmitting={isSubmitting}
+                  onCancel={() => onOpenChange(false)}
+                  onBack={goBack}
+                  onNext={goNext}
+                  onCreate={() => void handleCreate()}
+                />
+              </form>
+            </Form>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   )

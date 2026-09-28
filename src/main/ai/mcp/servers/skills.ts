@@ -5,6 +5,7 @@ import { net } from 'electron'
 
 import { loggerService } from '@logger'
 import { skillService } from '@main/ai/skills/SkillService'
+import { WH_SKILL_MARKET_DISABLED } from '@shared/utils/enterpriseFlags'
 import { buildGithubSkillResult, searchSkillMarketplaces } from '@shared/utils/skillMarketplace'
 
 const logger = loggerService.withContext('McpServer:Skills')
@@ -79,7 +80,8 @@ class SkillsServer {
 
   private setupHandlers() {
     this.mcpServer.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: [SEARCH_TOOL, INSTALL_TOOL]
+      // WH enterprise: marketplace search and remote install stay unreachable.
+      tools: WH_SKILL_MARKET_DISABLED ? [] : [SEARCH_TOOL, INSTALL_TOOL]
     }))
 
     this.mcpServer.server.setRequestHandler(CallToolRequestSchema, async (request) => {

@@ -1,5 +1,5 @@
 appId: com.kangfenmao.CherryStudio
-productName: Cherry Studio
+productName: CherryDeploy
 extraMetadata:
   cherryEdition: global
 electronLanguages:
@@ -16,7 +16,7 @@ directories:
   buildResources: build
 
 protocols:
-  - name: Cherry Studio
+  - name: CherryDeploy
     schemes:
       - cherrystudio
 files:
@@ -109,7 +109,7 @@ extraResources:
   - from: "packages/provider-registry/data"
     to: "provider-registry"
 win:
-  executableName: Cherry Studio
+  executableName: CherryDeploy
   artifactName: ${productName}-${version}-${arch}-setup.${ext}
   extraResources:
     - from: "node_modules/@aiany/sqlite-vec-windows-${arch}/vec0.dll"
@@ -172,7 +172,7 @@ rpm:
   fpm: ["--rpm-rpmbuild-define=_build_id_links none"]
 publish:
   provider: generic
-  url: https://releases.cherry-ai.com
+  url: http://updates-a.example.com:9000/cherrydeploy-updates/win/
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/
 beforePack: scripts/before-pack.js
@@ -182,56 +182,19 @@ artifactBuildCompleted: scripts/artifact-build-completed.js
 releaseInfo:
   releaseNotes: |
     <!--LANG:en-->
-    Cherry Studio 2.0.14 - New Features, Fixes, and Performance
+    CherryDeploy 2.0.14-p1 - Upstream 2.0.14 Base + Deployment Hardening
 
     ✨ New Features
-    - [Agent] Agent sessions now label self-started replies — “Goal round N” for DSH goal continuations, or “Continued after background work” — so users understand why a new message appears.
-    - [Models] DeepSeek V4.1 Flash Expires-On-0910 vision model is now available in the catalog.
-    - [Cherry Cloud] Cloud sessions are now bound to the current computer, preserving free-grant history across credential resets.
-
-    🐛 Bug Fixes
-    - [Startup] Fixed Cherry Studio failing to start after an upgrade when the built-in Support Agent still needs to be created.
-    - [Local Models] Windows cleanup now tolerates transient DLL release failures after an inference utility process exits.
-    - [Knowledge Base] Fixed tables from PDFs imported through Mistral OCR being dropped; table contents are now indexed as Markdown tables.
-    - [Pi] Fix OpenCode Go/Zen requests failing with MissingSessionID by preserving the agent session header.
-    - [Export] Notion export now waits for the page body to be written and reports failed writes as errors instead of success.
-    - [Obsidian] Fix invalid front matter when the note title contains “: “ or starts with “#”, and export tags as a proper YAML list.
-    - [Prompt Polish] Add cancellation and a 60-second timeout so stalled requests return to a retryable state.
-    - [Chat] Show safe, actionable provider details instead of generic errors such as “400 null”.
-    - [Debug] Fixed truncated Outputs and UI freezes when inspecting long streaming responses in the message debug panel (Call Chain).
-    - [Provider] OpenCode Go/Zen requests from model health checks, topic naming, and context compaction now carry the required session header.
-    - [Chat] Deleting a response selected for context now preserves other replies and transfers context and follow-up messages to an adjacent reply.
-    - [Cherry Cloud] Unsupported client versions now show an update-required message instead of asking users to retry login.
-    - [Chat] Fixed text-only continuation turns incorrectly processing stale image attachments and failing before the response starts.
-    - [Cherry Cloud] Login now requires a configured client signing key for custom builds.
-
-    ⚡ Performance
-    - [Knowledge] Knowledge page management dialogs and item detail panels are now loaded on demand instead of with the page.
+    - [Base] Rebased onto the upstream Cherry Studio 2.0.14 codebase (Electron 44 runtime, agent browser tools, knowledge/table indexing fixes, and more)
+    - [Update] Update feeds can be published on multiple MinIO zones; the app pulls updates from whichever network it can reach
+    - [Security] Deployment hardening: crash reporting, usage telemetry, and IP geolocation disabled; feedback, official cloud login, and online skill marketplace removed; external links rerouted to a configurable portal
 
     <!--LANG:zh-CN-->
-    Cherry Studio 2.0.14 - 新功能、修复与性能优化
+    CherryDeploy 2.0.14-p1 - 升级至上游 2.0.14 基线 + 部署加固
 
     ✨ 新功能
-    - [智能体] 智能体会话现在为自动发起的回复添加标签——DSH 目标推进显示”目标推进 · 第 N 轮”，后台工作后继续显示”后台工作后继续”——让用户了解为什么出现了新消息。
-    - [模型] DeepSeek V4.1 Flash Expires-On-0910 视觉模型现已上架模型目录。
-    - [樱桃云] 云会话现已绑定当前设备，在凭证重置后保留免费额度历史。
+    - [基线] 合并上游 Cherry Studio 2.0.14（Electron 44 运行时、智能体浏览器工具、知识库表格索引修复等大量更新）
+    - [更新] 更新源可部署于多个 MinIO 网络区域，应用自动选择当前网络可达的源拉取更新
+    - [安全] 部署加固：禁用崩溃上报、使用量遥测与 IP 归属地查询；移除反馈、官方云登录与在线技能市场；外网链接统一指向可配置门户
 
-    🐛 问题修复
-    - [启动] 修复升级后需要首次创建内置产品反馈 Agent 时 Cherry Studio 无法启动的问题。
-    - [本地模型] 修复 Windows 下 inference utility process 退出后 DLL 短暂占用导致模型清理偶发失败的问题。
-    - [知识库] 修复通过 Mistral OCR 导入的 PDF 表格丢失问题；表格内容现在以 Markdown 表格形式索引。请重新索引已有条目以获取表格内容。
-    - [Pi] 修复 OpenCode Go/Zen 请求因 MissingSessionID 失败的问题，现已保留智能体会话头部。
-    - [导出] Notion 导出现在等待页面正文写入完成，写入失败时正确报错而非显示成功。
-    - [Obsidian] 修复笔记标题包含”: “或以”#”开头时导出无效前置数据的问题，并将标签导出为正确的 YAML 列表。
-    - [提示词润色] 支持取消和 60 秒超时，卡住的请求可立即恢复为可重试状态。
-    - [对话] 显示安全可操作的错误详情，而非”400 null”等通用错误。
-    - [调试] 修复消息调试面板(Call Chain)中长输出被截断和 UI 卡死的问题。
-    - [服务商] OpenCode Go/Zen 的模型健康检查、话题命名和上下文压缩请求现在携带必需的会话头部。
-    - [对话] 删除用于上下文的回复时，现在保留其他回复，并将上下文和后续消息转移到相邻回复。
-    - [樱桃云] 不支持的客户端版本现在显示更新提示，而非让用户重试登录。
-    - [对话] 修复纯文本续写轮次错误处理残留图片附件并在响应开始前失败的问题。
-    - [樱桃云] 自定义构建现在需要配置客户端签名密钥才能登录。
-
-    ⚡ 性能优化
-    - [知识库] 知识库页面管理对话框和条目详情面板现在按需加载，而非随页面加载。
     <!--LANG:END-->

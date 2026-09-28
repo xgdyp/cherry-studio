@@ -173,6 +173,19 @@ describe('providerHandlers', () => {
       expect(result).toEqual({ keys: enabledKeys })
     })
 
+    it('masks key values for WH-managed providers so secrets never reach the renderer', async () => {
+      const keys = [{ id: 'wh-key', key: 'sk-wh-secret', label: 'Default', isEnabled: true }]
+      getApiKeysMock.mockReturnValueOnce(keys)
+
+      const result = await providerHandlers['/providers/:providerId/api-keys'].GET({
+        params: { providerId: 'wh-ai' }
+      } as never)
+
+      expect(result).toEqual({
+        keys: [{ id: 'wh-key', key: '********', label: 'Default', isEnabled: true }]
+      })
+    })
+
     it('replaces API keys through the dedicated api-keys resource', async () => {
       const keys = [{ id: 'key-a', key: 'sk-a', isEnabled: true }]
       replaceApiKeysMock.mockResolvedValueOnce({ id: 'openai', apiKeys: [{ id: 'key-a', isEnabled: true }] })

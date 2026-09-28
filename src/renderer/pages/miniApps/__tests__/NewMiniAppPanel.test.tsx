@@ -238,10 +238,7 @@ describe('NewMiniAppPanel', () => {
     expect(screen.queryByRole('button', { name: /common\.save/ })).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'miniApp.add.developer_docs' }))
-    expect(mocks.ipcRequest).toHaveBeenCalledWith(
-      'system.shell.open_website',
-      'https://github.com/CherryHQ/cherry-studio-miniapps'
-    )
+    expect(mocks.ipcRequest).toHaveBeenCalledWith('system.shell.open_website', 'https://portal.example.com')
 
     rerender(
       <NewMiniAppPanel

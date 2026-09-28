@@ -17,6 +17,7 @@ import { buildCreateAgentCommand, buildCreateAssistantDto } from '@renderer/util
 import type { ConcreteApiPaths } from '@shared/data/api/paths'
 import type { InstalledSkill } from '@shared/data/types/agent'
 import type { Group } from '@shared/data/types/group'
+import { WH_SKILL_MARKET_DISABLED } from '@shared/utils/enterpriseFlags'
 
 import { useAgentMutations } from './agentAdapter'
 import { useAssistantMutations } from './assistantAdapter'
@@ -209,7 +210,7 @@ export function useResourceCatalogController(resourceType: ResourceCatalogContro
       onCreate: handleCreate,
       onImportAssistant: () => setAssistantImportOpen(true),
       onOpenAssistantLibrary: isAssistantLibrary ? () => setAssistantLibraryOpen(true) : undefined,
-      onOpenSkillMarketplace: () => setSkillMarketplaceOpen(true),
+      onOpenSkillMarketplace: WH_SKILL_MARKET_DISABLED ? undefined : () => setSkillMarketplaceOpen(true),
       onOpenSystemSkills: () => setSystemSkillOpen(true),
       groups: scopedGroups,
       activeGroupId,

@@ -10,13 +10,7 @@ import { computeBackoff } from '@main/core/job/runtime/backoff'
 import { BaseService, DependsOn, Injectable, Phase, ServicePhase } from '@main/core/lifecycle'
 import { isWin } from '@main/core/platform'
 import { WindowType } from '@main/core/window/types'
-import { regionService } from '@main/services/RegionService'
-import { getAppEdition } from '@main/utils/appEdition'
-import { generateUserAgent, getClientId } from '@main/utils/systemInfo'
 import type { RetryPolicy } from '@shared/data/api/schemas/jobs'
-import { UpgradeChannel } from '@shared/data/preference/preferenceTypes'
-import type { AppEdition } from '@shared/types/appEdition'
-import { APP_NAME } from '@shared/utils/constants'
 import {
   hasMultiLanguageReleaseNotes,
   localizeReleaseNotes,
@@ -27,28 +21,31 @@ import {
 
 const logger = loggerService.withContext('AppUpdaterService')
 
-type ReleaseRegion = 'cn' | 'global'
+// Enterprise deployment: updates are served from WH MinIO release buckets
+// (anonymous read, Windows only). Two network zones publish the same bucket —
+// office and secure — and the client pulls from whichever it can reach: each
+// check probes the bases in order and uses the first one that answers.
+const UPDATE_FEED_BASES = ['http://updates-a.example.com:9000', 'http://updates-b.example.com:9000'] as const
+const UPDATE_FEED_PATH = '/cherrydeploy-updates/win/'
+// Flip to true (or empty UPDATE_FEED_BASES) to disable every check path —
+// manual checks, the scheduled loop, and release-history fetching.
+const UPDATES_DISABLED = false
+const FEED_PROBE_TIMEOUT_MS = 4_000
 
-const RELEASE_HISTORY_URL = 'https://releases.cherry-ai.com/release-history.json'
-const RELEASE_HISTORY_TIMEOUT_MS = 10_000
-const RELEASE_HISTORY_MAX_BYTES = 1024 * 1024
-
-function getEditionUpdateChannel(channel: UpgradeChannel, edition: AppEdition): string {
-  return edition === 'cn' ? `${channel}-cn` : channel
-}
-
-function getUpdateHeaders({ region, edition }: { region: ReleaseRegion; edition: AppEdition }) {
-  return {
-    'User-Agent': generateUserAgent(),
-    'Cache-Control': 'no-cache',
-    'Client-Id': getClientId(),
-    'App-Name': APP_NAME,
-    'App-Version': `v${app.getVersion()}`,
-    OS: process.platform,
-    'X-Edition': edition,
-    'X-Region': region
+async function probeFeedBase(base: string): Promise<boolean> {
+  try {
+    const response = await net.fetch(`${base}${UPDATE_FEED_PATH}latest.yml`, {
+      method: 'HEAD',
+      signal: AbortSignal.timeout(FEED_PROBE_TIMEOUT_MS)
+    })
+    return response.ok
+  } catch {
+    return false
   }
 }
+
+const RELEASE_HISTORY_TIMEOUT_MS = 10_000
+const RELEASE_HISTORY_MAX_BYTES = 1024 * 1024
 
 class ReleaseNotesUpdater extends AppUpdater {
   constructor() {
@@ -92,6 +89,8 @@ const CHECK_RETRY_POLICY: RetryPolicy = {
 export class AppUpdaterService extends BaseService {
   private cancellationToken: CancellationToken = new CancellationToken()
   private updateCheckResult: UpdateCheckResult | null = null
+  /** MinIO base that answered the last probe; null = re-probe both zones. */
+  private cachedFeedBase: string | null = null
   // Consecutive scheduled-check failures, drives backoff; reset on success.
   private updateCheckFailures = 0
 
@@ -112,18 +111,6 @@ export class AppUpdaterService extends BaseService {
       ;(autoUpdater as NsisUpdater).installDirectory = application.getPath('app.install')
     }
 
-    // Cancel an in-flight download when the test plan or channel changes — the
-    // download targets the previously selected channel. The v2 settings UI
-    // writes these preferences directly (no IPC), so react to the change here
-    // rather than in a now-removed `App_SetTestPlan`/`App_SetTestChannel` handler.
-    this.registerDisposable(
-      application
-        .get('PreferenceService')
-        .subscribeMultipleChanges(['app.dist.test_plan.enabled', 'app.dist.test_plan.channel'], () =>
-          this.cancelDownload()
-        )
-    )
-
     // Stop the scheduled check when this service stops (it depends on
     // SchedulerService, so SchedulerService is still alive at this point).
     this.registerDisposable(() => application.get('SchedulerService').unregister(AUTO_UPDATE_SCHEDULE_ID))
@@ -136,7 +123,7 @@ export class AppUpdaterService extends BaseService {
 
     // Development builds skip automatic checks but still support manual checks.
     // Portable builds do not perform update checks.
-    if (!app.isPackaged || this.isPortable()) {
+    if (UPDATES_DISABLED || !app.isPackaged || this.isPortable()) {
       return
     }
     this.scheduleNextUpdateCheck(INITIAL_CHECK_DELAY_MS)
@@ -179,48 +166,56 @@ export class AppUpdaterService extends BaseService {
     this.registerDisposable(() => autoUpdater.removeListener('update-downloaded', onUpdateDownloaded))
   }
 
-  private async getUpdateRequest() {
-    const currentVersion = app.getVersion()
-    const testPlan = application.get('PreferenceService').get('app.dist.test_plan.enabled')
-    const requestedChannel = testPlan
-      ? application.get('PreferenceService').get('app.dist.test_plan.channel') || UpgradeChannel.RC
-      : UpgradeChannel.LATEST
-
-    const ipCountry = await regionService.getCountry()
-    const region: ReleaseRegion = ipCountry.toLowerCase() === 'cn' ? 'cn' : 'global'
-    const edition = getAppEdition()
-    const updateChannel = getEditionUpdateChannel(requestedChannel, edition)
-
-    const updateHeaders = getUpdateHeaders({ region, edition })
-
-    return { currentVersion, edition, ipCountry, region, testPlan, updateChannel, updateHeaders }
+  /**
+   * First reachable MinIO base wins. The winner is cached so the release-notes
+   * and history fetches in one cycle hit the same bucket; a failed check
+   * clears the cache (see `performUpdateCheck`) so the next cycle re-probes
+   * both zones — the machine may have moved networks in between.
+   */
+  private async resolveUpdateFeedUrl(): Promise<string | null> {
+    if (this.cachedFeedBase !== null) {
+      return `${this.cachedFeedBase}${UPDATE_FEED_PATH}`
+    }
+    for (const base of UPDATE_FEED_BASES) {
+      if (await probeFeedBase(base)) {
+        this.cachedFeedBase = base
+        logger.info(`MinIO update feed resolved to ${base}`)
+        return `${base}${UPDATE_FEED_PATH}`
+      }
+    }
+    logger.warn(`No reachable MinIO update feed among: ${UPDATE_FEED_BASES.join(', ')}`)
+    return null
   }
 
-  private async configureUpdaterForCheck() {
-    const { currentVersion, edition, ipCountry, region, testPlan, updateChannel, updateHeaders } =
-      await this.getUpdateRequest()
-
-    autoUpdater.requestHeaders = {
-      ...autoUpdater.requestHeaders,
-      ...updateHeaders
+  private async configureUpdaterForCheck(): Promise<boolean> {
+    const feedUrl = await this.resolveUpdateFeedUrl()
+    if (!feedUrl) {
+      return false
     }
-
-    logger.info(
-      `Using managed update feed for version ${currentVersion}, edition: ${edition}, testPlan: ${testPlan}, channel: ${updateChannel}, region: ${region} (IP country: ${ipCountry})`
-    )
-    autoUpdater.channel = updateChannel
+    // The MinIO bucket serves plain files over anonymous HTTP — no region
+    // routing, no channel manifests beyond latest.yml.
+    autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl })
+    autoUpdater.channel = 'latest'
 
     // disable downgrade after change the channel
     autoUpdater.allowDowngrade = false
     // Keep differential downloads disabled for the current release artifacts.
     autoUpdater.disableDifferentialDownload = true
+
+    logger.info(`Using MinIO update feed for version ${app.getVersion()}: ${feedUrl}`)
+    return true
   }
 
   private async fetchReleaseHistory(): Promise<ReleaseNotesEntry[] | null> {
+    if (UPDATES_DISABLED) {
+      return null
+    }
+    const feedUrl = await this.resolveUpdateFeedUrl()
+    if (!feedUrl) {
+      return null
+    }
     try {
-      const { updateHeaders } = await this.getUpdateRequest()
-      const response = await net.fetch(RELEASE_HISTORY_URL, {
-        headers: updateHeaders,
+      const response = await net.fetch(`${feedUrl}release-history.json`, {
         redirect: 'follow',
         signal: AbortSignal.timeout(RELEASE_HISTORY_TIMEOUT_MS)
       })
@@ -247,15 +242,21 @@ export class AppUpdaterService extends BaseService {
   }
 
   public async getLatestReleaseNotes(): Promise<ReleaseNotesEntry | null> {
+    if (UPDATES_DISABLED) {
+      return null
+    }
+
     try {
-      const { updateChannel, updateHeaders } = await this.getUpdateRequest()
+      const feedUrl = await this.resolveUpdateFeedUrl()
+      if (!feedUrl) {
+        return null
+      }
       const updater = new ReleaseNotesUpdater()
       updater.logger = logger as Logger
-      updater.forceDevUpdateConfig = !app.isPackaged
+      updater.setFeedURL({ provider: 'generic', url: feedUrl })
       updater.autoDownload = false
       updater.autoInstallOnAppQuit = false
-      updater.requestHeaders = updateHeaders
-      updater.channel = updateChannel
+      updater.channel = 'latest'
       updater.allowDowngrade = false
 
       const result = await updater.checkForUpdates()
@@ -306,6 +307,13 @@ export class AppUpdaterService extends BaseService {
    * broadcast (see `registerAutoUpdaterListeners`), not the return value.
    */
   private async performUpdateCheck() {
+    if (UPDATES_DISABLED) {
+      return {
+        currentVersion: app.getVersion(),
+        updateInfo: null
+      }
+    }
+
     void application.get('AnalyticsService').trackAppUpdate()
 
     if (this.isPortable()) {
@@ -315,9 +323,21 @@ export class AppUpdaterService extends BaseService {
       }
     }
 
-    await this.configureUpdaterForCheck()
-
-    this.updateCheckResult = await autoUpdater.checkForUpdates()
+    const feedConfigured = await this.configureUpdaterForCheck()
+    if (!feedConfigured) {
+      return {
+        currentVersion: app.getVersion(),
+        updateInfo: null
+      }
+    }
+    try {
+      this.updateCheckResult = await autoUpdater.checkForUpdates()
+    } catch (error) {
+      // The cached base went stale (network switch or bucket outage) — drop it
+      // so the next check re-probes both zones instead of retrying a dead one.
+      this.cachedFeedBase = null
+      throw error
+    }
     logger.info(
       `update check result: ${this.updateCheckResult?.isUpdateAvailable}, channel: ${autoUpdater.channel}, currentVersion: ${autoUpdater.currentVersion}`
     )

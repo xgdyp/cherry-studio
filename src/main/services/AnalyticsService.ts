@@ -8,6 +8,7 @@ import { type Activatable, BaseService, Injectable, Phase, ServicePhase } from '
 import { isDataCollectionConsented } from '@main/utils/privacyConsent'
 import { generateUserAgent, getClientId } from '@main/utils/systemInfo'
 import { APP_NAME } from '@shared/utils/constants'
+import { WH_TELEMETRY_DISABLED } from '@shared/utils/enterpriseFlags'
 
 const logger = loggerService.withContext('AnalyticsService')
 
@@ -39,6 +40,12 @@ export class AnalyticsService extends BaseService implements Activatable {
   })
 
   private refreshDesiredEnabled(): void {
+    // WH enterprise: usage telemetry stays off regardless of the stored consent.
+    if (WH_TELEMETRY_DISABLED) {
+      this.desiredEnabled = false
+      this.reconciler.request()
+      return
+    }
     const preferenceService = application.get('PreferenceService')
     this.desiredEnabled = isDataCollectionConsented(
       preferenceService.get('app.privacy.data_collection.enabled'),

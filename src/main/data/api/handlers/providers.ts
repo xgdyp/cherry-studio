@@ -21,6 +21,7 @@ import {
   UpdateProviderSchema
 } from '@shared/data/api/schemas/providers'
 import type { HandlersFor } from '@shared/data/api/types'
+import { WH_MANAGED_KEY_PLACEHOLDER, WH_MANAGED_PROVIDER_IDS } from '@shared/data/presets/whDefaultModel'
 
 export const providerHandlers: HandlersFor<ProviderSchemas> = {
   '/providers': {
@@ -55,7 +56,13 @@ export const providerHandlers: HandlersFor<ProviderSchemas> = {
     GET: async ({ params, query }) => {
       const parsed = ListProviderApiKeysQuerySchema.parse(query ?? {})
       const keys = providerService.getApiKeys(params.providerId, parsed)
-      return { keys }
+      // Custom deployment: WH-managed corporate keys must never leave the
+      // main process — the renderer only sees a masked placeholder. Mutations
+      // are rejected in ProviderService, so the placeholder is never persisted.
+      const safeKeys = WH_MANAGED_PROVIDER_IDS.includes(params.providerId)
+        ? keys.map((entry) => ({ ...entry, key: WH_MANAGED_KEY_PLACEHOLDER }))
+        : keys
+      return { keys: safeKeys }
     },
 
     POST: async ({ params, body }) => {

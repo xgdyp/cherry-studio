@@ -33,6 +33,7 @@ import { DataApiError, DataApiErrorFactory, ErrorCode } from '@shared/data/api/e
 import type { OrderBatchRequest, OrderRequest } from '@shared/data/api/schemas/_endpointHelpers'
 import type { CreateProviderDto, ListProvidersQuery, UpdateProviderDto } from '@shared/data/api/schemas/providers'
 import { isManagedCherryProviderId } from '@shared/data/presets/cherryai'
+import { WH_MANAGED_PROVIDER_IDS } from '@shared/data/presets/whDefaultModel'
 import type { EndpointType } from '@shared/data/types/model'
 import type {
   ApiKeyEntry,
@@ -176,6 +177,24 @@ function assertProviderAvailable<T extends ProviderIdentity>(
   if (!row || !isProviderIdentityAvailable(row)) {
     throw DataApiErrorFactory.notFound('Provider', providerId)
   }
+}
+
+function isWhManagedProviderId(providerId: string): boolean {
+  return WH_MANAGED_PROVIDER_IDS.includes(providerId)
+}
+
+/**
+ * Custom deployment: WH-managed gateways carry a corporate key seeded from
+ * `WH_API_KEY`. The renderer only ever sees a masked placeholder, so any
+ * renderer-supplied override (including an echoed placeholder) must be
+ * ignored in favor of the stored key.
+ */
+function assertWhManagedApiKeyMutationAllowed(providerId: string, operation: string): void {
+  if (!isWhManagedProviderId(providerId)) {
+    return
+  }
+
+  throw DataApiErrorFactory.invalidOperation(operation, 'WH-managed provider API keys cannot be modified')
 }
 
 function normalizeApiKeyEntry(entry: ApiKeyEntry): ApiKeyEntry {
@@ -684,7 +703,9 @@ class ProviderService {
     assertProviderAvailable(row, providerId)
 
     const allKeys = row.apiKeys ?? []
-    if (override !== undefined) {
+    // WH-managed keys never reach the renderer, so a renderer override can
+    // only be an echoed placeholder — always serve the stored key instead.
+    if (override !== undefined && !isWhManagedProviderId(providerId)) {
       const matched = allKeys.find((entry) => entry.key === override)
       return matched ? toResolvedProviderApiKey(override, 'matched', matched) : unknownCredential(override)
     }
@@ -760,6 +781,7 @@ class ProviderService {
    */
   addApiKey(providerId: string, key: string, label?: string): Provider {
     assertManagedCherryProviderMutationAllowed(providerId, `add API key to provider ${providerId}`)
+    assertWhManagedApiKeyMutationAllowed(providerId, `add API key to provider ${providerId}`)
 
     const db = application.get('DbService').getDb()
     const { provider, added } = db.transaction((tx) => {
@@ -812,6 +834,7 @@ class ProviderService {
    */
   replaceApiKeys(providerId: string, apiKeys: ApiKeyEntry[]): Provider {
     assertManagedCherryProviderMutationAllowed(providerId, `replace API keys for provider ${providerId}`)
+    assertWhManagedApiKeyMutationAllowed(providerId, `replace API keys for provider ${providerId}`)
 
     const db = application.get('DbService').getDb()
     const provider = db.transaction((tx) => {
@@ -860,6 +883,7 @@ class ProviderService {
     }
   ): Provider {
     assertManagedCherryProviderMutationAllowed(providerId, `update API key for provider ${providerId}`)
+    assertWhManagedApiKeyMutationAllowed(providerId, `update API key for provider ${providerId}`)
 
     const db = application.get('DbService').getDb()
     const provider = db.transaction((tx) => {
@@ -930,6 +954,7 @@ class ProviderService {
    */
   deleteApiKey(providerId: string, keyId: string): Provider {
     assertManagedCherryProviderMutationAllowed(providerId, `delete API key from provider ${providerId}`)
+    assertWhManagedApiKeyMutationAllowed(providerId, `delete API key from provider ${providerId}`)
 
     const db = application.get('DbService').getDb()
     const provider = db.transaction((tx) => {

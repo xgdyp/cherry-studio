@@ -9,11 +9,8 @@ const mocks = vi.hoisted(() => ({ resourcesPath: '/opt/cherry/resources' }))
 
 vi.mock('@data/hooks/useCache', () => ({ useCache: () => [mocks.resourcesPath] }))
 
-/*
- * A NON-EMPTY catalog on purpose. The shipped array is empty this release, so a test
- * written against the real one asserts nothing — it would stay green with the entire
- * filter deleted. The empty-catalog case is the CI catalog test's job, not this one's.
- */
+// A NON-EMPTY catalog on purpose: with entries present the enterprise gate is
+// the only thing that can produce an empty result, so a deleted gate fails.
 vi.mock('@shared/data/presets/miniApps', async (importOriginal) => ({
   ...(await importOriginal<typeof MiniAppPresets>()),
   BUILTIN_MINI_APPS: [
@@ -22,57 +19,20 @@ vi.mock('@shared/data/presets/miniApps', async (importOriginal) => ({
   ]
 }))
 
-describe('useBuiltinMiniApps', () => {
-  it('offers only the builtins that are not installed yet', () => {
+/**
+ * WH enterprise: the builtin catalog lists external chat sites the intranet
+ * cannot reach — the hook must offer nothing, whatever is installed.
+ */
+describe('useBuiltinMiniApps (WH enterprise)', () => {
+  it('offers nothing even with a non-empty catalog', () => {
+    const { result } = renderHook(() => useBuiltinMiniApps([], 'zh-CN'))
+    expect(result.current).toEqual([])
+  })
+
+  it('offers nothing regardless of installed presets', () => {
     const { result } = renderHook(() =>
-      useBuiltinMiniApps([{ presetMiniAppId: 'com.cherrystudio.miniapp.draw' }], 'zh-CN')
+      useBuiltinMiniApps([{ presetMiniAppId: 'com.cherrystudio.miniapp.draw' }, { presetMiniAppId: null }], 'en')
     )
-
-    expect(result.current.map((e) => e.appId)).toEqual(['com.cherrystudio.miniapp.notes'])
-    expect(result.current[0].name).toBe('笔记')
-  })
-
-  it('re-resolves names when the interface language changes', () => {
-    // Kills the memo-deps mutant: drop `language` from the deps array and only this fails.
-    const { result, rerender } = renderHook(({ lang }) => useBuiltinMiniApps([], lang), {
-      initialProps: { lang: 'en' }
-    })
-    expect(result.current[0].name).toBe('Notes')
-
-    rerender({ lang: 'zh-CN' })
-
-    expect(result.current[0].name).toBe('笔记')
-  })
-
-  it('cannot be silenced by a sideloaded app claiming the same id', () => {
-    // `presetMiniAppId` is NULL for everything the user installed themselves, so no
-    // package a user can produce can suppress an official offer by claiming its id.
-    const { result } = renderHook(() =>
-      useBuiltinMiniApps([{ presetMiniAppId: null }, { presetMiniAppId: null }], 'en')
-    )
-
-    expect(result.current).toHaveLength(2)
-  })
-
-  it('resolves the icon under the shipped resources directory', () => {
-    const { result } = renderHook(() => useBuiltinMiniApps([], 'en'))
-
-    // `resources/` has no URL of its own from the renderer, and the per-app
-    // `cherry-miniapp://` origin does not exist until the app is installed (§10.4).
-    expect(result.current[0].iconUrl).toBe(
-      'file:///opt/cherry/resources/builtin-mini-apps/com.cherrystudio.miniapp.notes/icon.webp'
-    )
-  })
-
-  it('offers nothing until the resources path is known', () => {
-    // Filled by `useWindowRuntime` at startup; the first frame can run before it lands.
-    mocks.resourcesPath = ''
-    try {
-      expect(renderHook(() => useBuiltinMiniApps([], 'en')).result.current).toEqual([])
-    } finally {
-      mocks.resourcesPath = '/opt/cherry/resources'
-    }
-    // Positive control: the empty result above is the missing path, not a dead filter.
-    expect(renderHook(() => useBuiltinMiniApps([], 'en')).result.current).toHaveLength(2)
+    expect(result.current).toEqual([])
   })
 })

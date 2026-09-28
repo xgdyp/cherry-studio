@@ -1,5 +1,5 @@
 import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from '@tanstack/react-router'
-import { ArrowLeft, Check, KeyRound, Languages, LogIn } from 'lucide-react'
+import { ArrowLeft, Check, KeyRound, Languages, Lock, LogIn } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -12,6 +12,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  Input,
   Scrollbar,
   Select,
   SelectContent,
@@ -41,12 +42,13 @@ import { CHERRYAI_DEFAULT_UNIQUE_MODEL_ID, isManagedCherryProviderId } from '@sh
 import type { Model, UniqueModelId } from '@shared/data/types/model'
 import type { CherryCloudStatus } from '@shared/ipc/schemas/cherryCloud'
 import { LATEST_PRIVACY_POLICY_VERSION } from '@shared/utils/constants'
+import { WH_OFFICIAL_LOGIN_DISABLED } from '@shared/utils/enterpriseFlags'
 import { defaultLanguage } from '@shared/utils/languages'
 import { isNonChatModel } from '@shared/utils/model'
 
 import { PrivacyPolicyDialog } from '../privacy/PrivacyPolicyDialog'
 
-type OnboardingStep = 'welcome' | 'provider' | 'select-model'
+type OnboardingStep = 'welcome' | 'password' | 'provider' | 'select-model'
 type OnboardingCompletionStatus = Exclude<OnboardingProviderSetupStatus, 'pending'>
 type PrivacyChoiceAction = () => void | Promise<void>
 interface OnboardingPageProps {
@@ -58,6 +60,8 @@ const CHERRYIN_OAUTH_SERVER = 'https://open.cherryin.ai'
 const CHERRYIN_LOGIN_LOADING_TIMEOUT_MS = 10_000
 const PESSIMISTIC_PREFERENCE_OPTIONS = { optimistic: false } as const
 const isOnboardingModel = (model: Model) => !isManagedCherryProviderId(model.providerId) && !isNonChatModel(model)
+/** Custom deployment: password required after accepting the usage policy. */
+const WH_ONBOARDING_PASSWORD = 'CHANGE-ME'
 const ONBOARDING_PREFERENCE_KEYS = {
   providerSetupStatus: 'app.onboarding.provider_setup.status',
   dataCollectionEnabled: 'app.privacy.data_collection.enabled',
@@ -110,6 +114,8 @@ export default function OnboardingPage({
     isAuthorizing: isCloudAuthorizing
   } = useCherryAccountSession(shouldUseCherryAccountLogin)
   cloudStatusRef.current = cloudStatus
+  const [passwordInput, setPasswordInput] = useState('')
+  const [passwordError, setPasswordError] = useState(false)
   const eligibleProviderIds = new Set(
     enabledProviders.filter((provider) => !isManagedCherryProviderId(provider.id)).map((provider) => provider.id)
   )
@@ -225,9 +231,17 @@ export default function OnboardingPage({
 
   const handlePrivacyPolicyChoice = useCallback(
     async (accepted: boolean) => {
-      if (await updatePrivacyAcceptance(accepted)) {
-        setShowPrivacyPolicy(false)
+      if (!(await updatePrivacyAcceptance(accepted))) {
+        return
       }
+      if (accepted) {
+        // Custom deployment: accepting the usage policy gates on a password
+        // check before onboarding may continue.
+        setShowPrivacyPolicy(false)
+        setStep('password')
+        return
+      }
+      setShowPrivacyPolicy(false)
     },
     [updatePrivacyAcceptance]
   )
@@ -444,33 +458,37 @@ export default function OnboardingPage({
                     <p className="m-0 text-muted-foreground text-sm">{t('onboarding.welcome.subtitle')}</p>
                   </div>
                   <div className="mt-8 flex w-full flex-col gap-3">
-                    <Button
-                      type="button"
-                      size="lg"
-                      className="h-11 w-full rounded-xl"
-                      loading={isPrimaryLoginPending}
-                      disabled={
-                        isUpdatingPrivacy || (shouldUseCherryAccountLogin && cloudStatus?.phase === 'signed-in')
-                      }
-                      onClick={() =>
-                        void runAfterPrivacyChoice(
-                          shouldUseCherryAccountLogin ? handleCherryCloudLogin : handleCherryInLogin
-                        )
-                      }>
-                      {!isPrimaryLoginPending && <LogIn size={16} />}
-                      {primaryLoginLabel}
-                    </Button>
-                    {shouldUseCherryAccountLogin && cloudStatus?.phase === 'authorizing' ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="lg"
-                        className="h-11 w-full rounded-xl"
-                        loading={isCancellingCloudLogin}
-                        onClick={() => void handleCherryCloudLoginCancel()}>
-                        {t('common.cancel')}
-                      </Button>
-                    ) : null}
+                    {!WH_OFFICIAL_LOGIN_DISABLED && (
+                      <>
+                        <Button
+                          type="button"
+                          size="lg"
+                          className="h-11 w-full rounded-xl"
+                          loading={isPrimaryLoginPending}
+                          disabled={
+                            isUpdatingPrivacy || (shouldUseCherryAccountLogin && cloudStatus?.phase === 'signed-in')
+                          }
+                          onClick={() =>
+                            void runAfterPrivacyChoice(
+                              shouldUseCherryAccountLogin ? handleCherryCloudLogin : handleCherryInLogin
+                            )
+                          }>
+                          {!isPrimaryLoginPending && <LogIn size={16} />}
+                          {primaryLoginLabel}
+                        </Button>
+                        {shouldUseCherryAccountLogin && cloudStatus?.phase === 'authorizing' ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="lg"
+                            className="h-11 w-full rounded-xl"
+                            loading={isCancellingCloudLogin}
+                            onClick={() => void handleCherryCloudLoginCancel()}>
+                            {t('common.cancel')}
+                          </Button>
+                        ) : null}
+                      </>
+                    )}
                     <Button
                       type="button"
                       variant="outline"
@@ -486,6 +504,64 @@ export default function OnboardingPage({
                     {t('onboarding.welcome.setup_hint')}
                   </p>
                 </div>
+              </div>
+            )}
+
+            {step === 'password' && (
+              <div className="flex h-full w-full items-center justify-center px-6 pb-20">
+                <form
+                  className="flex w-full max-w-[420px] flex-col items-center"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    if (passwordInput === WH_ONBOARDING_PASSWORD) {
+                      setPasswordError(false)
+                      setPasswordInput('')
+                      setStep('provider')
+                    } else {
+                      setPasswordError(true)
+                    }
+                  }}>
+                  <div className="flex size-16 items-center justify-center rounded-xl bg-accent">
+                    <Lock className="size-7 text-muted-foreground" />
+                  </div>
+                  <div className="mt-5 flex flex-col gap-2 text-center">
+                    <h1 className="m-0 font-semibold text-2xl text-foreground">{t('onboarding.password.title')}</h1>
+                    <p className="m-0 text-muted-foreground text-sm">{t('onboarding.password.subtitle')}</p>
+                  </div>
+                  <div className="mt-8 flex w-full flex-col gap-2">
+                    <Input
+                      type="password"
+                      value={passwordInput}
+                      autoFocus
+                      autoComplete="off"
+                      aria-invalid={passwordError}
+                      className="h-11 rounded-xl"
+                      placeholder={t('onboarding.password.placeholder')}
+                      onChange={(event) => {
+                        setPasswordInput(event.target.value)
+                        if (passwordError) setPasswordError(false)
+                      }}
+                    />
+                    {passwordError && (
+                      <p className="m-0 text-destructive text-xs">{t('onboarding.password.incorrect')}</p>
+                    )}
+                    <Button type="submit" size="lg" className="h-11 w-full rounded-xl" disabled={!passwordInput}>
+                      {t('onboarding.password.continue')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground"
+                      onClick={() => {
+                        setPasswordInput('')
+                        setPasswordError(false)
+                        setStep('welcome')
+                      }}>
+                      {t('onboarding.password.back_to_policy')}
+                    </Button>
+                  </div>
+                </form>
               </div>
             )}
 

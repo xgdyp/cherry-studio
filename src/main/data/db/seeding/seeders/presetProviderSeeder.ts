@@ -1,77 +1,54 @@
-import type { ProtoProviderConfig } from '@cherrystudio/provider-registry'
-import { RegistryLoader } from '@cherrystudio/provider-registry/node'
+import type { InsertUserProviderRow } from '@data/db/schemas/userProvider'
 import { providerService } from '@data/services/ProviderService'
-import { resolveRegistryPaths } from '@data/services/utils/registryDataPaths'
-import type { AuthConfig } from '@shared/data/types/provider'
+import {
+  WH_DEFAULT_PROVIDER_BASE_URL,
+  WH_DEFAULT_PROVIDER_ID,
+  WH_DEFAULT_PROVIDER_NAME
+} from '@shared/data/presets/whDefaultModel'
+import { ENDPOINT_TYPE } from '@shared/data/types/model'
 
 import type { DbType, ISeeder } from '../../types'
 
+type NewUserProviderInput = Omit<InsertUserProviderRow, 'orderKey'>
+
 /**
- * Seed rows are DELTA rows: registry-owned connection config
- * (endpointConfigs, defaultChatEndpoint) is NOT persisted —
- * it resolves from the registry at read time (#17096), so registry updates
- * reach existing installs without reconciliation. Only user-editable
- * scaffolding is seeded: identity, display name, and the auth shell below.
- *
- * Per the v2 invariant in `ProviderSettings/utils/provider.ts` ("Azure/Vertex/Bedrock
- * reuse other vendors' endpoint protocols, so authType is the only reliable
- * discriminator"), vendor URL routing for those providers is driven by
- * `authType` (`iam-azure` → AI SDK `createAzure`, `iam-gcp` → Vertex SDK).
+ * Custom deployment: registry presets are NOT seeded. Only the built-in
+ * corporate OpenAI-compatible gateways below are inserted (insert-only,
+ * user edits are never overwritten).
  */
-function getSeedAuthConfig(providerId: string): AuthConfig | null {
-  if (providerId === 'vertexai') {
-    return { type: 'iam-gcp', project: '', location: '' }
+const BUILT_IN_PROVIDERS: NewUserProviderInput[] = [
+  {
+    providerId: WH_DEFAULT_PROVIDER_ID,
+    presetProviderId: null,
+    name: WH_DEFAULT_PROVIDER_NAME,
+    endpointConfigs: { [ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS]: { baseUrl: WH_DEFAULT_PROVIDER_BASE_URL } },
+    defaultChatEndpoint: ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS,
+    isEnabled: true
+  },
+  {
+    providerId: 'wh-external',
+    presetProviderId: null,
+    name: 'External Models',
+    endpointConfigs: { [ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS]: { baseUrl: 'https://gateway-b.example.com' } },
+    defaultChatEndpoint: ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS,
+    isEnabled: true
+  },
+  {
+    providerId: 'wh-internal',
+    presetProviderId: null,
+    name: 'Gateway B',
+    endpointConfigs: { [ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS]: { baseUrl: 'http://gateway-c.example.com' } },
+    defaultChatEndpoint: ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS,
+    isEnabled: true
   }
-
-  if (providerId === 'azure-openai') {
-    return { type: 'iam-azure', apiVersion: '' }
-  }
-
-  if (providerId === 'aws-bedrock') {
-    return { type: 'iam-aws', region: '' }
-  }
-
-  return null
-}
-
-function toDbRow(p: ProtoProviderConfig) {
-  return {
-    providerId: p.id,
-    presetProviderId: p.presetProviderId ?? p.id,
-    name: p.name,
-    authConfig: getSeedAuthConfig(p.id)
-  }
-}
+]
 
 export class PresetProviderSeeder implements ISeeder {
   readonly name = 'presetProvider'
-  readonly description = 'Insert preset provider configurations'
-
-  private _loader?: RegistryLoader
-
-  private getLoader(): RegistryLoader {
-    if (!this._loader) {
-      this._loader = new RegistryLoader(resolveRegistryPaths())
-    }
-    return this._loader
-  }
-
-  get version(): string {
-    return this.getLoader().getProvidersVersion()
-  }
+  readonly description = 'Insert built-in provider configurations'
+  readonly version = 'wh-1'
 
   run(db: DbType): void {
-    let rawProviders: ProtoProviderConfig[]
-    try {
-      rawProviders = this.getLoader().loadProviders()
-    } catch (error) {
-      throw new Error('PresetProviderSeeder: failed to load registry providers', { cause: error })
-    }
-
-    if (rawProviders.length === 0) return
-
-    const rows = rawProviders.map(toDbRow)
-
-    db.transaction((tx) => providerService.batchUpsertTx(tx, rows))
+    db.transaction((tx) => providerService.batchUpsertTx(tx, BUILT_IN_PROVIDERS))
   }
 }

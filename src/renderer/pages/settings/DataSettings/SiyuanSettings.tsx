@@ -14,6 +14,7 @@ import {
 import { useTheme } from '@renderer/hooks/useTheme'
 import { ipcApi } from '@renderer/ipc'
 import { toast } from '@renderer/services/toast'
+import { WH_PORTAL_URL } from '@shared/utils/enterpriseFlags'
 
 const logger = loggerService.withContext('SiyuanSettings')
 
@@ -43,7 +44,7 @@ const SiyuanSettings: FC = () => {
   }
 
   const handleSiyuanHelpClick = () => {
-    void ipcApi.request('system.shell.open_website', 'https://docs.cherry-ai.com/advanced-basic/siyuan')
+    void ipcApi.request('system.shell.open_website', WH_PORTAL_URL)
   }
 
   const handleCheckConnection = async () => {

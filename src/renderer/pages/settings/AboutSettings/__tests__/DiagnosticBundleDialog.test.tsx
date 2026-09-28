@@ -168,7 +168,7 @@ describe('DiagnosticBundleDialog', () => {
     )
   })
 
-  it('reveals the saved file without embedding its local path in the support email', async () => {
+  it('reveals the saved file and contacts support via the enterprise portal', async () => {
     const user = userEvent.setup()
     renderDialog()
     await screen.findByText('settings.about.diagnostics.sources.logs.title')
@@ -184,19 +184,9 @@ describe('DiagnosticBundleDialog', () => {
     )
 
     await user.click(screen.getByRole('button', { name: 'settings.about.diagnostics.actions.contact' }))
-    await waitFor(() => {
-      const mailCall = mocks.request.mock.calls.find(([route]) => route === 'system.shell.open_website')
-      expect(mailCall).toBeDefined()
-      const mailto = String(mailCall?.[1])
-      expect(mailto).toMatch(/^mailto:support@cherry-ai\.com\?/)
-      expect(mailto).not.toContain('+')
-      expect(mailto).toContain('%20')
-      expect(decodeURIComponent(mailto)).toContain('Diagnostics bundle-123')
-      expect(decodeURIComponent(mailto)).toContain('bundle-123')
-      expect(decodeURIComponent(mailto)).toContain('cherry-studio-diagnostics.zip')
-      expect(decodeURIComponent(mailto)).not.toContain('/Users/')
-      expect(decodeURIComponent(mailto)).not.toContain('/tmp/')
-    })
+    await waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith('system.shell.open_website', 'https://portal.example.com')
+    )
   })
 
   it('allows a system-only export without consent when no optional sources are available', async () => {
@@ -310,7 +300,7 @@ describe('DiagnosticBundleDialog', () => {
     expect(mocks.toastError).toHaveBeenCalledWith('settings.about.diagnostics.errors.email_client_failed')
 
     await user.click(copyButton)
-    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledWith('support@cherry-ai.com'))
+    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledWith('https://portal.example.com'))
     expect(mocks.toastSuccess).toHaveBeenCalledWith('settings.about.diagnostics.success.email_copied')
   })
 })

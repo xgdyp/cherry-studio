@@ -26,6 +26,7 @@ import { toast } from '@renderer/services/toast'
 import type { SidebarAppId } from '@renderer/utils/sidebar'
 import { getSidebarMenuPath } from '@renderer/utils/sidebar'
 import type { MiniApp as MiniAppType } from '@shared/data/types/miniApp'
+import { WH_BUNDLED_WEBAPPS_DISABLED } from '@shared/utils/enterpriseFlags'
 
 const BASE_URL = 'https://www.cherry-ai.com/'
 const DEEPSEEK_HARNESS_URL = '/app/code?tool=deepseek-harness'
@@ -289,19 +290,21 @@ export default function LaunchpadPage() {
                 onSortEnd={handleAppsSortEnd}
                 renderItem={(item) => renderAppMenuItem(item)}
               />
-              <button
-                type="button"
-                onClick={openDeepSeekHarness}
-                className={`${LAUNCHPAD_ITEM_CLASS} group flex cursor-pointer flex-col items-center gap-1 rounded-2xl px-1 py-2 text-center outline-none transition-transform duration-200 hover:scale-105 focus-visible:scale-105 active:scale-95`}>
-                <span className={APP_ICON_TILE_CLASS}>
-                  <span className={APP_ICON_FRAME_CLASS}>
-                    <img src={dshIcon} alt="" className={APP_ICON_CLASS} draggable={false} />
+              {!WH_BUNDLED_WEBAPPS_DISABLED && (
+                <button
+                  type="button"
+                  onClick={openDeepSeekHarness}
+                  className={`${LAUNCHPAD_ITEM_CLASS} group flex cursor-pointer flex-col items-center gap-1 rounded-2xl px-1 py-2 text-center outline-none transition-transform duration-200 hover:scale-105 focus-visible:scale-105 active:scale-95`}>
+                  <span className={APP_ICON_TILE_CLASS}>
+                    <span className={APP_ICON_FRAME_CLASS}>
+                      <img src={dshIcon} alt="" className={APP_ICON_CLASS} draggable={false} />
+                    </span>
                   </span>
-                </span>
-                <span className="w-full overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-foreground">
-                  {t('launchpad.deepseek_harness_shortcut')}
-                </span>
-              </button>
+                  <span className="w-full overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-foreground">
+                    {t('launchpad.deepseek_harness_shortcut')}
+                  </span>
+                </button>
+              )}
             </div>
           </section>
 

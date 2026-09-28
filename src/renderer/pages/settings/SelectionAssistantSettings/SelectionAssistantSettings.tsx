@@ -23,6 +23,7 @@ import { ipcApi } from '@renderer/ipc'
 import { isLinux, isMac, isWin } from '@renderer/utils/platform'
 import { cn } from '@renderer/utils/style'
 import type { SelectionFilterMode, SelectionTriggerMode } from '@shared/data/preference/preferenceTypes'
+import { WH_PORTAL_URL } from '@shared/utils/enterpriseFlags'
 
 import MacProcessTrustHintModal from './components/MacProcessTrustHintModal'
 import SelectionActionsList from './components/SelectionActionsList'
@@ -102,9 +103,7 @@ const SelectionAssistantSettings: FC = () => {
             <button
               type="button"
               className="cursor-pointer border-0 bg-transparent p-0 text-xs font-normal text-link hover:underline"
-              onClick={() =>
-                ipcApi.request('system.shell.open_website', 'https://github.com/CherryHQ/cherry-studio/issues/6505')
-              }>
+              onClick={() => ipcApi.request('system.shell.open_website', WH_PORTAL_URL)}>
               {'FAQ & ' + t('settings.about.feedback.button')}
             </button>
           </div>

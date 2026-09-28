@@ -18,6 +18,7 @@ import {
   resolveCommandKeybinding,
   resolveMenu
 } from '@shared/utils/command'
+import { WH_PORTAL_URL } from '@shared/utils/enterpriseFlags'
 
 const logger = loggerService.withContext('AppMenuService')
 
@@ -156,7 +157,7 @@ export class AppMenuService extends BaseService {
             click: () => {
               void application
                 .get('MainWindowService')
-                .openWebsite('https://cherry-ai.com')
+                .openWebsite(WH_PORTAL_URL)
                 .catch((error) => logger.warn('Failed to open website', { error }))
             }
           },
@@ -166,27 +167,7 @@ export class AppMenuService extends BaseService {
             click: () => {
               void application
                 .get('MainWindowService')
-                .openWebsite('https://cherry-ai.com/docs')
-                .catch((error) => logger.warn('Failed to open website', { error }))
-            }
-          },
-          {
-            type: 'custom',
-            label: t('appMenu.feedback'),
-            click: () => {
-              void application
-                .get('MainWindowService')
-                .openWebsite('https://github.com/CherryHQ/cherry-studio/issues/new/choose')
-                .catch((error) => logger.warn('Failed to open website', { error }))
-            }
-          },
-          {
-            type: 'custom',
-            label: t('appMenu.releases'),
-            click: () => {
-              void application
-                .get('MainWindowService')
-                .openWebsite('https://github.com/CherryHQ/cherry-studio/releases')
+                .openWebsite(WH_PORTAL_URL)
                 .catch((error) => logger.warn('Failed to open website', { error }))
             }
           }

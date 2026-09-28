@@ -1,4 +1,6 @@
-import { and, eq } from 'drizzle-orm'
+import { randomUUID } from 'node:crypto'
+
+import { and, eq, inArray } from 'drizzle-orm'
 
 import { ENDPOINT_TYPE } from '@cherrystudio/provider-registry'
 import { preferenceTable } from '@data/db/schemas/preference'
@@ -9,7 +11,6 @@ import { providerService } from '@data/services/ProviderService'
 import { insertManyWithOrderKey } from '@data/services/utils/orderKey'
 import { loggerService } from '@logger'
 import {
-  CHERRY_CLOUD_PROVIDER_ID,
   CHERRYAI_API_BASE_URL,
   CHERRYAI_DEFAULT_MODEL_GROUP,
   CHERRYAI_DEFAULT_MODEL_ID,
@@ -18,12 +19,40 @@ import {
   CHERRYAI_PROVIDER_ID,
   CHERRYAI_PROVIDER_NAME
 } from '@shared/data/presets/cherryai'
-import type { ModelCapability } from '@shared/data/types/model'
+import {
+  WH_DEFAULT_MODEL_GROUP,
+  WH_DEFAULT_MODEL_ID,
+  WH_DEFAULT_MODEL_NAME,
+  WH_DEFAULT_PROVIDER_BASE_URL,
+  WH_DEFAULT_PROVIDER_ID,
+  WH_DEFAULT_PROVIDER_NAME,
+  WH_DEFAULT_UNIQUE_MODEL_ID,
+  WH_INTERNAL_DEFAULT_UNIQUE_MODEL_ID,
+  WH_INTERNAL_PROVIDER_BASE_URL,
+  WH_INTERNAL_PROVIDER_ID,
+  WH_INTERNAL_PROVIDER_NAME,
+  WH_INTERNAL_QWEN_UNIQUE_MODEL_ID,
+  WH_QWEN_MODEL_GROUP,
+  WH_QWEN_MODEL_ID,
+  WH_QWEN_MODEL_NAME,
+  WH_QWEN_UNIQUE_MODEL_ID
+} from '@shared/data/presets/whDefaultModel'
+import { MODALITY, MODEL_CAPABILITY, type ModelCapability } from '@shared/data/types/model'
 
 import type { DbType, ISeeder } from '../../types'
 import { hashObject } from '../hashObject'
 
 const logger = loggerService.withContext('CherryAiDefaultModelSeeder')
+
+function getWhApiKeys() {
+  const key = process.env.WH_API_KEY?.trim()
+  return key ? [{ id: randomUUID(), key, label: 'Default', isEnabled: true }] : []
+}
+
+function getWhInternalApiKeys() {
+  const key = process.env.WH_INTERNAL_API_KEY?.trim()
+  return key ? [{ id: randomUUID(), key, label: 'Default', isEnabled: true }] : []
+}
 
 const DEFAULT_MODEL_PREFERENCE_SCOPE = 'default' as const
 export const DEFAULT_MODEL_PREFERENCE_KEYS = [
@@ -33,15 +62,15 @@ export const DEFAULT_MODEL_PREFERENCE_KEYS = [
 ] as const
 
 type TxLike = Pick<DbType, 'select' | 'insert' | 'update'>
-type ManagedCherryProviderRow = Omit<InsertUserProviderRow, 'orderKey'>
+type CherryAiProviderRow = Omit<InsertUserProviderRow, 'orderKey'>
 type CherryAiDefaultModelRow = Omit<InsertUserModelRow, 'orderKey'>
 type DefaultModelPreferenceRow = {
   scope: typeof DEFAULT_MODEL_PREFERENCE_SCOPE
   key: (typeof DEFAULT_MODEL_PREFERENCE_KEYS)[number]
-  value: typeof CHERRYAI_DEFAULT_UNIQUE_MODEL_ID
+  value: typeof WH_DEFAULT_UNIQUE_MODEL_ID
 }
 
-function createCherryAiProviderRow(): ManagedCherryProviderRow {
+function createCherryAiProviderRow(): CherryAiProviderRow {
   return {
     providerId: CHERRYAI_PROVIDER_ID,
     presetProviderId: CHERRYAI_PROVIDER_ID,
@@ -52,19 +81,6 @@ function createCherryAiProviderRow(): ManagedCherryProviderRow {
       }
     },
     defaultChatEndpoint: ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS,
-    authConfig: null,
-    providerSettings: null,
-    isEnabled: true
-  }
-}
-
-function createCherryCloudProviderRow(): ManagedCherryProviderRow {
-  return {
-    providerId: CHERRY_CLOUD_PROVIDER_ID,
-    presetProviderId: CHERRYAI_PROVIDER_ID,
-    name: CHERRYAI_PROVIDER_NAME,
-    endpointConfigs: null,
-    defaultChatEndpoint: ENDPOINT_TYPE.ANTHROPIC_MESSAGES,
     authConfig: null,
     providerSettings: null,
     isEnabled: true
@@ -105,11 +121,6 @@ export function ensureCherryAiDefaultProviderAndModelTx(tx: TxLike): void {
     logger.warn('Self-healed missing CherryAI default provider', { providerId: CHERRYAI_PROVIDER_ID })
   }
 
-  const insertedCloudProviderCount = providerService.batchUpsertTx(tx, [createCherryCloudProviderRow()])
-  if (insertedCloudProviderCount > 0) {
-    logger.warn('Self-healed missing Cherry Cloud provider', { providerId: CHERRY_CLOUD_PROVIDER_ID })
-  }
-
   const [existing] = tx
     .select({ id: userModelTable.id })
     .from(userModelTable)
@@ -126,11 +137,123 @@ export function ensureCherryAiDefaultProviderAndModelTx(tx: TxLike): void {
   })
 }
 
+function createWhDefaultModelRow(providerId: string, uniqueModelId: string): CherryAiDefaultModelRow {
+  return {
+    id: uniqueModelId,
+    providerId,
+    modelId: WH_DEFAULT_MODEL_ID,
+    presetModelId: null,
+    name: WH_DEFAULT_MODEL_NAME,
+    description: null,
+    group: WH_DEFAULT_MODEL_GROUP,
+    capabilities: [MODEL_CAPABILITY.REASONING, MODEL_CAPABILITY.FUNCTION_CALL] as ModelCapability[],
+    inputModalities: null,
+    outputModalities: null,
+    endpointTypes: null,
+    // pi/dsh agent runtimes require a known context window (compaction/overflow
+    // recovery); null would hide this model from their pickers.
+    contextWindow: 393216,
+    maxInputTokens: 30000,
+    maxOutputTokens: 256000,
+    supportsStreaming: true,
+    reasoning: {},
+    parameters: null,
+    pricing: null,
+    isEnabled: true,
+    isHidden: false,
+    isDeprecated: false,
+    notes: null
+  }
+}
+
+function createWhQwenModelRow(providerId: string, uniqueModelId: string): CherryAiDefaultModelRow {
+  return {
+    id: uniqueModelId,
+    providerId,
+    modelId: WH_QWEN_MODEL_ID,
+    presetModelId: null,
+    name: WH_QWEN_MODEL_NAME,
+    description: null,
+    group: WH_QWEN_MODEL_GROUP,
+    capabilities: [MODEL_CAPABILITY.IMAGE_RECOGNITION] as ModelCapability[],
+    inputModalities: [MODALITY.TEXT, MODALITY.IMAGE],
+    outputModalities: [MODALITY.TEXT],
+    endpointTypes: null,
+    contextWindow: 256000,
+    maxInputTokens: 30000,
+    maxOutputTokens: 256000,
+    supportsStreaming: true,
+    reasoning: null,
+    parameters: null,
+    pricing: null,
+    isEnabled: true,
+    isHidden: false,
+    isDeprecated: false,
+    notes: null
+  }
+}
+
+/**
+ * Ensure the built-in WH gateway models exist. Provider rows are inserted
+ * here (insert-only) because this seeder runs before PresetProviderSeeder,
+ * and user_model has an FK to user_provider. The rows must be complete:
+ * PresetProviderSeeder's insert-only pass cannot fill in fields later.
+ */
+function ensureWhDefaultModelTx(tx: TxLike): void {
+  providerService.batchUpsertTx(tx, [
+    {
+      providerId: WH_DEFAULT_PROVIDER_ID,
+      presetProviderId: null,
+      name: WH_DEFAULT_PROVIDER_NAME,
+      endpointConfigs: {
+        [ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS]: { baseUrl: WH_DEFAULT_PROVIDER_BASE_URL }
+      },
+      defaultChatEndpoint: ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS,
+      apiKeys: getWhApiKeys(),
+      isEnabled: true
+    },
+    {
+      providerId: WH_INTERNAL_PROVIDER_ID,
+      presetProviderId: null,
+      name: WH_INTERNAL_PROVIDER_NAME,
+      endpointConfigs: {
+        [ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS]: { baseUrl: WH_INTERNAL_PROVIDER_BASE_URL }
+      },
+      defaultChatEndpoint: ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS,
+      apiKeys: getWhInternalApiKeys(),
+      isEnabled: true
+    }
+  ])
+
+  const existing = new Set(
+    tx
+      .select({ id: userModelTable.id })
+      .from(userModelTable)
+      .where(inArray(userModelTable.providerId, [WH_DEFAULT_PROVIDER_ID, WH_INTERNAL_PROVIDER_ID]))
+      .all()
+      .map((row) => row.id)
+  )
+
+  const rows = [
+    createWhDefaultModelRow(WH_DEFAULT_PROVIDER_ID, WH_DEFAULT_UNIQUE_MODEL_ID),
+    createWhQwenModelRow(WH_DEFAULT_PROVIDER_ID, WH_QWEN_UNIQUE_MODEL_ID),
+    createWhDefaultModelRow(WH_INTERNAL_PROVIDER_ID, WH_INTERNAL_DEFAULT_UNIQUE_MODEL_ID),
+    createWhQwenModelRow(WH_INTERNAL_PROVIDER_ID, WH_INTERNAL_QWEN_UNIQUE_MODEL_ID)
+  ].filter((row) => !existing.has(row.id))
+
+  if (rows.length === 0) return
+
+  insertManyWithOrderKey(tx, userModelTable, rows, {
+    pkColumn: userModelTable.id,
+    scope: inArray(userModelTable.providerId, [WH_DEFAULT_PROVIDER_ID, WH_INTERNAL_PROVIDER_ID])
+  })
+}
+
 function createDefaultModelPreferenceRows(): DefaultModelPreferenceRow[] {
   return DEFAULT_MODEL_PREFERENCE_KEYS.map((key) => ({
     scope: DEFAULT_MODEL_PREFERENCE_SCOPE,
     key,
-    value: CHERRYAI_DEFAULT_UNIQUE_MODEL_ID
+    value: WH_DEFAULT_UNIQUE_MODEL_ID
   }))
 }
 
@@ -157,20 +280,24 @@ function ensureDefaultModelPreferencesTx(tx: TxLike): void {
 }
 
 function ensureCherryAiDefaultModelSetupTx(tx: TxLike): void {
-  ensureCherryAiDefaultProviderAndModelTx(tx)
+  // WH fork: the upstream CherryAI provider + Qwen model are not seeded for
+  // fresh users (only WH gateway providers/models); migration still restores
+  // them for upgraded v1 databases via ensureCherryAiDefaultProviderAndModelTx.
+  ensureWhDefaultModelTx(tx)
   ensureDefaultModelPreferencesTx(tx)
 }
 
 export class CherryAiDefaultModelSeeder implements ISeeder {
   readonly name = 'cherryaiDefaultModel'
-  readonly description = 'Ensure CherryAI providers, default model, and default model preferences'
+  readonly description = 'Ensure WH default providers, models, and default model preferences'
   readonly version: string
 
   constructor() {
     this.version = hashObject({
-      provider: createCherryAiProviderRow(),
-      cloudProvider: createCherryCloudProviderRow(),
-      model: createCherryAiDefaultModelRow(),
+      whModel: createWhDefaultModelRow(WH_DEFAULT_PROVIDER_ID, WH_DEFAULT_UNIQUE_MODEL_ID),
+      whQwenModel: createWhQwenModelRow(WH_DEFAULT_PROVIDER_ID, WH_QWEN_UNIQUE_MODEL_ID),
+      whInternalModel: createWhDefaultModelRow(WH_INTERNAL_PROVIDER_ID, WH_INTERNAL_DEFAULT_UNIQUE_MODEL_ID),
+      whInternalQwenModel: createWhQwenModelRow(WH_INTERNAL_PROVIDER_ID, WH_INTERNAL_QWEN_UNIQUE_MODEL_ID),
       preferences: createDefaultModelPreferenceRows()
     })
   }

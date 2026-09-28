@@ -152,7 +152,14 @@ export const mainResolveAlias = {
 
 export default defineConfig({
   main: {
-    define: { __APP_EDITION__: JSON.stringify(rendererEdition) },
+    // Bake the WH API keys (loaded from .env by the dotenv CLI wrapper
+    // in the build/dev scripts) into the bundle at build time — the packaged
+    // app ships no .env, so a runtime process.env read would come up empty.
+    define: {
+      __APP_EDITION__: JSON.stringify(rendererEdition),
+      'process.env.WH_API_KEY': JSON.stringify(process.env.WH_API_KEY ?? ''),
+      'process.env.WH_INTERNAL_API_KEY': JSON.stringify(process.env.WH_INTERNAL_API_KEY ?? '')
+    },
     plugins: [
       chunkExportGuardPlugin(),
       miniAppThemeAssetPlugin(),

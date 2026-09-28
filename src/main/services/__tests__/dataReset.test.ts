@@ -12,13 +12,14 @@ const MARKER_ASIDE = `${USER_DATA}/data-reset.pending.invalid`
 const DATABASE_FILE = `${USER_DATA}/Data/cherrystudio.sqlite`
 const CLAUDE_ROOT = `${USER_DATA}/Data/Agents/.claude`
 const VERSION_LOG_FILE = `${USER_DATA}/version.log`
-const REGISTRY_OVERRIDE = `${USER_DATA}/Runtime/provider-registry-override`
 
 let applicationMock: ReturnType<typeof createMockApplication>
 const showErrorBoxMock = vi.fn()
 const showMessageBoxMock = vi.fn()
 const appendFileSyncMock = vi.fn()
 const rmSyncMock = vi.fn()
+const rmdirSyncMock = vi.fn()
+const lstatSyncMock = vi.fn()
 const readdirSyncMock = vi.fn()
 const realpathNativeMock = vi.fn()
 const readFileSyncMock = vi.fn()
@@ -58,6 +59,35 @@ type FsControl = {
   operations: string[]
 }
 let fsCtl: FsControl
+
+/** Top-level listing entries treated as directories by the in-memory fs. */
+const DIR_ENTRIES = [
+  'Data',
+  'Data.restore',
+  'IndexedDB.restore',
+  'Local Storage.restore',
+  '.claude',
+  'Cache',
+  'Code Cache',
+  'GPUCache',
+  'DawnGraphiteCache',
+  'DawnWebGPUCache',
+  'Partitions',
+  'Local Storage',
+  'IndexedDB',
+  'Session Storage',
+  'WebStorage',
+  'SharedStorage',
+  'logs',
+  'Crashpad',
+  'Runtime',
+  'Toolchain',
+  'tesseract',
+  'migration_temp',
+  '.pi',
+  'holiday-photos',
+  'restore-staging'
+]
 
 const DEFAULT_LISTING = [
   // Cherry user state
@@ -203,6 +233,13 @@ function stubFs(listing: string[] | Error = DEFAULT_LISTING) {
     return [...listing]
   })
   rmSyncMock.mockImplementation(() => undefined)
+  // Depth-first wipe support: top-level entries the listing marks as
+  // directories are removed via rmdirSync after their (empty) children pass.
+  lstatSyncMock.mockImplementation((p: string) => {
+    const name = p.replace(/\\/g, '/').split('/').pop() ?? ''
+    return { isDirectory: () => DIR_ENTRIES.includes(name) }
+  })
+  rmdirSyncMock.mockImplementation(() => undefined)
   appendFileSyncMock.mockImplementation((target: string, data: string) => {
     fsCtl.files.set(target, `${fsCtl.files.get(target) ?? ''}${data}`)
   })
@@ -284,6 +321,8 @@ function stubFs(listing: string[] | Error = DEFAULT_LISTING) {
     appendFileSync: appendFileSyncMock,
     readdirSync: readdirSyncMock,
     rmSync: rmSyncMock,
+    rmdirSync: rmdirSyncMock,
+    lstatSync: lstatSyncMock,
     realpathSync,
     readFileSync: readFileSyncMock,
     openSync: openSyncMock,
@@ -371,8 +410,27 @@ async function requestRemigration() {
   return requestV1Remigration()
 }
 
+function wipeTargets(): string[] {
+  return [...rmSyncMock.mock.calls, ...rmdirSyncMock.mock.calls].map(([target]) => stripExtendedPrefix(String(target)))
+}
+
+function expectWiped(target: string): void {
+  expect(wipeTargets()).toContain(target)
+}
+
+function expectNotWiped(target: string): void {
+  expect(wipeTargets()).not.toContain(target)
+}
+
 function wipedEntries(): string[] {
-  return rmSyncMock.mock.calls.map(([target]) => String(target)).filter((t) => t.startsWith(`${USER_DATA}/`))
+  return [...rmSyncMock.mock.calls, ...rmdirSyncMock.mock.calls]
+    .map(([target]) => stripExtendedPrefix(String(target)))
+    .filter((t) => t.startsWith(`${USER_DATA}/`))
+}
+
+/** Windows wipes go through \\?\ extended paths; normalize before comparing. */
+function stripExtendedPrefix(p: string): string {
+  return p.startsWith('\\\\?\\') ? p.slice(4) : p
 }
 
 beforeEach(() => {
@@ -410,8 +468,7 @@ describe('runDataReset', () => {
     for (const entry of EXPECTED_KEPT) {
       expect(wiped).not.toContain(`${USER_DATA}/${entry}`)
     }
-    expect(rmSyncMock).toHaveBeenCalledWith(APP_TEMP, expect.anything())
-    expect(rmSyncMock).toHaveBeenCalledWith(REGISTRY_OVERRIDE, expect.anything())
+    expectWiped(APP_TEMP)
 
     expect(fsCtl.commits.map((c) => c?.status)).toEqual(['pending', 'completed'])
     expect(markerExists()).toBe(false)
@@ -425,7 +482,7 @@ describe('runDataReset', () => {
     await runReset()
 
     expect(wipedEntries()).toContain(`${USER_DATA}/Data`)
-    expect(rmSyncMock).toHaveBeenCalledWith(APP_TEMP, expect.anything())
+    expectWiped(APP_TEMP)
     expect(appendFileSyncMock).not.toHaveBeenCalled()
     expect(fsCtl.commits.at(-1)).toMatchObject({ status: 'completed', operation: 'full_reset' })
   })
@@ -438,7 +495,7 @@ describe('runDataReset', () => {
     seedRawVersionLog(versionLog)
     await runReset()
 
-    expect(rmSyncMock.mock.calls.map(([target]) => target)).toEqual([
+    expect(rmSyncMock.mock.calls.map(([target]) => stripExtendedPrefix(String(target)))).toEqual([
       `${DATABASE_FILE}-wal`,
       `${DATABASE_FILE}-shm`,
       CLAUDE_ROOT,
@@ -448,6 +505,7 @@ describe('runDataReset', () => {
     expect(fsCtl.files.get(VERSION_LOG_FILE)).toBe(versionLog)
 
     expect(rmSyncMock).not.toHaveBeenCalledWith(APP_TEMP, expect.anything())
+    expectNotWiped(APP_TEMP)
     expect(fsCtl.commits.at(-1)).toMatchObject({
       status: 'completed',
       operation: 'v1_remigration'
@@ -459,13 +517,13 @@ describe('runDataReset', () => {
   it('keeps a failed remigration pending, refuses to boot, and retries on the next launch', async () => {
     stubAll(pendingMarker({ operation: 'v1_remigration' }))
     rmSyncMock.mockImplementation((target: string) => {
-      if (target === `${DATABASE_FILE}-shm`) throw new Error('EBUSY: resource busy')
+      if (stripExtendedPrefix(target) === `${DATABASE_FILE}-shm`) throw new Error('EBUSY: resource busy')
     })
 
     await runReset()
 
     expect(readStoredMarker()).toMatchObject({ status: 'pending', operation: 'v1_remigration', attempts: 1 })
-    expect(rmSyncMock).not.toHaveBeenCalledWith(DATABASE_FILE, expect.anything())
+    expectNotWiped(DATABASE_FILE)
     expect(showErrorBoxMock).toHaveBeenCalledWith('Migration Reset Failed', expect.any(String))
     expect(applicationMock.forceExit).toHaveBeenCalledWith(1)
     expect(applicationMock.relaunch).not.toHaveBeenCalled()
@@ -475,7 +533,7 @@ describe('runDataReset', () => {
     await runReset()
 
     expect(markerExists()).toBe(false)
-    expect(rmSyncMock).toHaveBeenCalledWith(DATABASE_FILE, expect.anything())
+    expectWiped(DATABASE_FILE)
     expect(applicationMock.relaunch).toHaveBeenCalledTimes(1)
   })
 
@@ -505,6 +563,26 @@ describe('runDataReset', () => {
     expect(wipedEntries()).not.toContain(MARKER_FILE)
     expect(unlinkSyncMock).toHaveBeenCalledWith(MARKER_FILE)
     expect(markerExists()).toBe(false)
+  })
+
+  it('wipes through \\\\?\\ extended paths on Windows so reserved device names (nul, con…) are removable', async () => {
+    if (process.platform !== 'win32') return
+    stubAll(pendingMarker())
+    rmSyncMock.mockImplementation(() => undefined)
+    await runReset()
+
+    const extendedPrefix = '\\\\?\\'
+    let sawUserDataWipe = false
+    for (const call of [...rmSyncMock.mock.calls, ...rmdirSyncMock.mock.calls, ...lstatSyncMock.mock.calls]) {
+      const target = String(call[0])
+      if (target.startsWith(extendedPrefix)) {
+        sawUserDataWipe = true
+        continue
+      }
+      // temp dir / v2 targets keep their own roots; on Windows they carry the prefix too
+      expect(target === APP_TEMP || stripExtendedPrefix(target).startsWith(`${USER_DATA}/`)).toBe(true)
+    }
+    if (process.platform === 'win32') expect(sawUserDataWipe).toBe(true)
   })
 
   it('renames a corrupt marker aside and continues booting', async () => {
@@ -612,7 +690,7 @@ describe('runDataReset', () => {
 
   it('relaunches back into preboot when a pass fails with attempts left', async () => {
     stubAll(pendingMarker())
-    rmSyncMock.mockImplementation((target: string) => {
+    rmdirSyncMock.mockImplementation((target: string) => {
       if (String(target).endsWith('/Data')) throw new Error('EBUSY: resource busy')
     })
     await runReset()
@@ -625,7 +703,7 @@ describe('runDataReset', () => {
 
   it('gives up at the attempt cap: clears the marker, warns, continues boot', async () => {
     stubAll(pendingMarker({ attempts: 1 }))
-    rmSyncMock.mockImplementation((target: string) => {
+    rmdirSyncMock.mockImplementation((target: string) => {
       if (String(target).endsWith('/Data')) throw new Error('EBUSY: resource busy')
     })
     await runReset()
@@ -770,8 +848,9 @@ describe('runDataReset', () => {
     stubAll(pendingMarker())
     await runReset()
 
-    for (const [target] of rmSyncMock.mock.calls) {
-      expect(String(target).startsWith(`${USER_DATA}/`) || String(target) === APP_TEMP).toBe(true)
+    for (const [target] of [...rmSyncMock.mock.calls, ...rmdirSyncMock.mock.calls]) {
+      const normalized = stripExtendedPrefix(String(target))
+      expect(normalized.startsWith(`${USER_DATA}/`) || normalized === APP_TEMP).toBe(true)
     }
   })
 

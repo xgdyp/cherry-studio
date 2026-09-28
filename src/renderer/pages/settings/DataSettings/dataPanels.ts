@@ -1,21 +1,7 @@
 import * as z from 'zod'
 
 /** Menu keys of the data settings submenu panels (order = menu order) */
-export const DATA_PANEL_KEYS = [
-  'data',
-  'local_backup',
-  'webdav',
-  'nutstore',
-  's3',
-  'import_settings',
-  'export_menu',
-  'markdown_export',
-  'notion',
-  'yuque',
-  'joplin',
-  'obsidian',
-  'siyuan'
-] as const
+export const DATA_PANEL_KEYS = ['data', 'local_backup', 'import_settings', 'export_menu', 'markdown_export'] as const
 
 export type DataPanelKey = (typeof DATA_PANEL_KEYS)[number]
 

@@ -81,15 +81,16 @@ describe('HelpMenu', () => {
     }
   })
 
-  it('shows four compact 32px actions and opens release notes', async () => {
+  it('shows the two enterprise actions and opens release notes', async () => {
     render(<HelpMenu layout="icon" onFeedbackClick={mocks.openFeedback} />)
     const user = await openMenu()
 
-    const actions = ['help.whats_new', 'help.guide', 'help.feedback', 'help.star'].map((name) =>
-      screen.getByRole('button', { name })
-    )
-    expect(actions).toHaveLength(4)
+    const actions = ['help.whats_new', 'help.guide'].map((name) => screen.getByRole('button', { name }))
+    expect(actions).toHaveLength(2)
     actions.forEach((action) => expect(action).toHaveClass('h-8'))
+    // WH enterprise: feedback and the GitHub star entry stay hidden.
+    expect(screen.queryByRole('button', { name: 'help.feedback' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'help.star' })).not.toBeInTheDocument()
 
     await user.click(actions[0])
     await waitFor(() => expect(mocks.openReleaseNotes).toHaveBeenCalledOnce())
@@ -107,12 +108,8 @@ describe('HelpMenu', () => {
     expect(onOverlayOpenChange).toHaveBeenLastCalledWith(false)
   })
 
-  it.each([
-    ['zh-CN', 'https://docs.cherryai.com.cn/'],
-    ['zh-TW', 'https://docs.cherryai.com.cn/'],
-    ['en-US', 'https://docs.cherryai.com.cn/docs/en-us']
-  ])('opens the language-specific guide in app content for %s', async (language, expectedUrl) => {
-    mocks.language = language
+  it('opens the enterprise portal guide in app content regardless of language', async () => {
+    mocks.language = 'zh-CN'
     render(<HelpMenu layout="full" onFeedbackClick={mocks.openFeedback} />)
     const user = await openMenu()
 
@@ -121,36 +118,12 @@ describe('HelpMenu', () => {
     await waitFor(() =>
       expect(mocks.openSmartMiniApp).toHaveBeenCalledWith(
         expect.objectContaining({
-          appId: 'cherrystudio-guide',
+          appId: 'wh-enterprise-guide',
           name: 'help.guide',
-          url: expectedUrl
+          url: 'https://portal.example.com'
         })
       )
     )
-  })
-
-  it('requests the feedback dialog from the secondary menu action', async () => {
-    render(<HelpMenu layout="full" onFeedbackClick={mocks.openFeedback} />)
-    const user = await openMenu()
-
-    await user.click(screen.getByRole('button', { name: 'help.feedback' }))
-
-    await waitFor(() => expect(mocks.openFeedback).toHaveBeenCalledOnce())
-  })
-
-  it('opens the repository in the system browser for the GitHub Star action', async () => {
-    render(<HelpMenu layout="icon" onFeedbackClick={mocks.openFeedback} />)
-    const user = await openMenu()
-
-    await user.click(screen.getByRole('button', { name: 'help.star' }))
-
-    await waitFor(() =>
-      expect(mocks.ipcRequest).toHaveBeenCalledWith(
-        'system.shell.open_website',
-        'https://github.com/CherryHQ/cherry-studio'
-      )
-    )
-    expect(mocks.openSmartMiniApp).not.toHaveBeenCalled()
   })
 
   it('supports keyboard activation from the focused first action', async () => {

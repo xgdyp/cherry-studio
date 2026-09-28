@@ -9,11 +9,15 @@ import { preferenceTable } from '@data/db/schemas/preference'
 import { topicTable } from '@data/db/schemas/topic'
 import { userModelTable } from '@data/db/schemas/userModel'
 import { userProviderTable } from '@data/db/schemas/userProvider'
-import { CherryAiDefaultModelSeeder } from '@data/db/seeding/seeders/cherryaiDefaultModelSeeder'
+import {
+  CherryAiDefaultModelSeeder,
+  ensureCherryAiDefaultProviderAndModelTx
+} from '@data/db/seeding/seeders/cherryaiDefaultModelSeeder'
 import { DefaultAssistantSeeder } from '@data/db/seeding/seeders/defaultAssistantSeeder'
 import { generateOrderKeyBetween } from '@data/services/utils/orderKey'
 import { CHERRYAI_DEFAULT_UNIQUE_MODEL_ID, CHERRYAI_PROVIDER_ID } from '@shared/data/presets/cherryai'
 import { DEFAULT_ASSISTANT_EMOJI, DEFAULT_ASSISTANT_PROMPT } from '@shared/data/presets/defaultAssistant'
+import { WH_DEFAULT_UNIQUE_MODEL_ID } from '@shared/data/presets/whDefaultModel'
 import { DEFAULT_ASSISTANT_SETTINGS } from '@shared/data/types/assistant'
 
 describe('DefaultAssistantSeeder', () => {
@@ -21,8 +25,10 @@ describe('DefaultAssistantSeeder', () => {
   const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
   async function runCherryAiModelDependencySeed() {
-    // Provides the CherryAI model row the default assistant's modelId FK requires
+    // The seeder provides the WH model row the default assistant's modelId FK
+    // requires; the migration helper restores the CherryAI rows this suite asserts on.
     new CherryAiDefaultModelSeeder().run(dbh.db)
+    dbh.db.transaction((tx) => ensureCherryAiDefaultProviderAndModelTx(tx))
   }
 
   beforeEach(() => {
@@ -57,7 +63,7 @@ describe('DefaultAssistantSeeder', () => {
       name: 'Cherry Assistant',
       emoji: DEFAULT_ASSISTANT_EMOJI,
       prompt: DEFAULT_ASSISTANT_PROMPT,
-      modelId: CHERRYAI_DEFAULT_UNIQUE_MODEL_ID,
+      modelId: WH_DEFAULT_UNIQUE_MODEL_ID,
       settings: DEFAULT_ASSISTANT_SETTINGS
     })
     expect(provider).toMatchObject({
@@ -65,7 +71,7 @@ describe('DefaultAssistantSeeder', () => {
       isEnabled: true
     })
     expect(model?.id).toBe(CHERRYAI_DEFAULT_UNIQUE_MODEL_ID)
-    expect(preference?.value).toBe(CHERRYAI_DEFAULT_UNIQUE_MODEL_ID)
+    expect(preference?.value).toBe(WH_DEFAULT_UNIQUE_MODEL_ID)
 
     const [topic] = await dbh.db.select().from(topicTable).limit(1)
     expect(topic?.id).toMatch(UUID_V4_PATTERN)

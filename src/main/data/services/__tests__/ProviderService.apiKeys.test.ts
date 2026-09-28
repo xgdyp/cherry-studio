@@ -13,6 +13,7 @@ import { generateOrderKeyBetween } from '@data/services/utils/orderKey'
 import { ErrorCode } from '@shared/data/api/errors'
 import { AddProviderApiKeySchema, ReplaceProviderApiKeysSchema } from '@shared/data/api/schemas/providers'
 import { CHERRYAI_PROVIDER_ID } from '@shared/data/presets/cherryai'
+import { WH_DEFAULT_PROVIDER_ID, WH_INTERNAL_PROVIDER_ID } from '@shared/data/presets/whDefaultModel'
 
 vi.mock('@main/utils/appEdition', () => ({ getAppEdition: () => 'global' }))
 
@@ -401,6 +402,63 @@ describe('ProviderService API keys', () => {
       apiKeySelection: { attribution: 'unknown' }
     })
     expect(MockMainCacheServiceUtils.getCacheValue('settings.provider.openai.last_used_key_id')).toBeUndefined()
+  })
+
+  it('rejects API key mutations for WH-managed providers', async () => {
+    for (const providerId of [WH_DEFAULT_PROVIDER_ID, WH_INTERNAL_PROVIDER_ID]) {
+      await dbh.db.insert(userProviderTable).values({
+        providerId,
+        name: `WH ${providerId}`,
+        orderKey: generateOrderKeyBetween(null, null),
+        apiKeys: [{ id: 'wh-key', key: 'sk-wh-secret', label: 'Default', isEnabled: true }],
+        isEnabled: true
+      })
+    }
+
+    expect(captureError(() => providerService.addApiKey(WH_DEFAULT_PROVIDER_ID, 'sk-new'))).toMatchObject({
+      code: ErrorCode.INVALID_OPERATION
+    })
+    expect(captureError(() => providerService.replaceApiKeys(WH_INTERNAL_PROVIDER_ID, []))).toMatchObject({
+      code: ErrorCode.INVALID_OPERATION
+    })
+    expect(
+      captureError(() => providerService.updateApiKey(WH_DEFAULT_PROVIDER_ID, 'wh-key', { label: 'Updated' }))
+    ).toMatchObject({
+      code: ErrorCode.INVALID_OPERATION
+    })
+    expect(captureError(() => providerService.deleteApiKey(WH_INTERNAL_PROVIDER_ID, 'wh-key'))).toMatchObject({
+      code: ErrorCode.INVALID_OPERATION
+    })
+
+    for (const providerId of [WH_DEFAULT_PROVIDER_ID, WH_INTERNAL_PROVIDER_ID]) {
+      const [row] = await dbh.db.select().from(userProviderTable).where(eq(userProviderTable.providerId, providerId))
+      expect(row?.apiKeys).toEqual([{ id: 'wh-key', key: 'sk-wh-secret', label: 'Default', isEnabled: true }])
+    }
+  })
+
+  it('serves WH-managed provider requests from the stored key, ignoring renderer overrides', async () => {
+    await dbh.db.insert(userProviderTable).values({
+      providerId: WH_DEFAULT_PROVIDER_ID,
+      name: 'Gateway A',
+      orderKey: generateOrderKeyBetween(null, null),
+      apiKeys: [{ id: 'wh-key', key: 'sk-wh-secret', label: 'Default', isEnabled: true }],
+      isEnabled: true
+    })
+
+    // The renderer only ever holds the masked placeholder; requests carrying
+    // it back must still be served with the real stored key.
+    expect(providerService.resolveApiKey(WH_DEFAULT_PROVIDER_ID, '********')).toEqual({
+      value: 'sk-wh-secret',
+      apiKeySelection: {
+        attribution: 'explicit',
+        id: 'wh-key',
+        label: 'Default',
+        masked: expect.stringContaining('****')
+      }
+    })
+
+    // Main-process consumers still read the real values.
+    expect(providerService.getApiKeys(WH_DEFAULT_PROVIDER_ID).map((entry) => entry.key)).toEqual(['sk-wh-secret'])
   })
 
   it('returns the only enabled key or an empty string when rotation has no usable keys', async () => {

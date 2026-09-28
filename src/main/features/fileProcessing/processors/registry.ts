@@ -40,15 +40,11 @@ export const processorRegistry = {
   },
   paddleocr: {
     runtime: 'remote',
-    isSupported: () => true,
+    // Enterprise deployment: third-party SaaS OCR is disabled.
+    isSupported: () => false,
     capabilities: {
       image_to_text: lazyHandler('background', async () =>
         import('./paddleocr/imageToText/handler').then(({ paddleImageToTextHandler }) => paddleImageToTextHandler)
-      ),
-      document_to_markdown: lazyHandler('remote-poll', async () =>
-        import('./paddleocr/documentToMarkdown/handler').then(
-          ({ paddleDocumentToMarkdownHandler }) => paddleDocumentToMarkdownHandler
-        )
       )
     }
   },
@@ -90,7 +86,8 @@ export const processorRegistry = {
   },
   mineru: {
     runtime: 'remote',
-    isSupported: () => true,
+    // Enterprise deployment: third-party SaaS document processors are disabled.
+    isSupported: () => false,
     capabilities: {
       document_to_markdown: lazyHandler('remote-poll', async () =>
         import('./mineru/documentToMarkdown/handler').then(
@@ -101,7 +98,8 @@ export const processorRegistry = {
   },
   doc2x: {
     runtime: 'remote',
-    isSupported: () => true,
+    // Enterprise deployment: third-party SaaS document processors are disabled.
+    isSupported: () => false,
     capabilities: {
       document_to_markdown: lazyHandler('remote-poll', async () =>
         import('./doc2x/documentToMarkdown/handler').then(
@@ -112,13 +110,9 @@ export const processorRegistry = {
   },
   mistral: {
     runtime: 'remote',
-    isSupported: () => true,
+    // Enterprise deployment: third-party SaaS OCR is disabled.
+    isSupported: () => false,
     capabilities: {
-      document_to_markdown: lazyHandler('background', async () =>
-        import('./mistral/documentToMarkdown/handler').then(
-          ({ mistralDocumentToMarkdownHandler }) => mistralDocumentToMarkdownHandler
-        )
-      ),
       image_to_text: lazyHandler('background', async () =>
         import('./mistral/imageToText/handler').then(({ mistralImageToTextHandler }) => mistralImageToTextHandler)
       )
